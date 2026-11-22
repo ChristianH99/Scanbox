@@ -119,8 +119,8 @@
     {#if detectError}<p class="mt-2 text-sm text-red-700 dark:text-red-300" role="alert">{detectError}</p>{/if}
 
     {#if result}
-      <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div>
+      <div class="mt-3 grid gap-3">
+        <div class="mx-auto w-full max-w-sm">
           <RectEditor bind:rect={testZone} src={imageUrl} label={t('qr.zone_test')} color="amber" disabled={!imageUrl}>
             {#snippet overlay()}
               <div class="pointer-events-none absolute border-2 border-dashed border-sky-500" style={rectStyle(result!.zone)} title={t('qr.zone')}></div>
@@ -140,7 +140,7 @@
               {#each hits as h, i (i)}
                 <li class="flex items-center gap-2 rounded border border-slate-200 p-2 dark:border-slate-700">
                   <span class="size-3 rounded-full {h.value === result.selected ? 'bg-emerald-500' : 'bg-red-500'}"></span>
-                  <code class="min-w-0 flex-1 break-all">{h.value}</code>
+                  <code class="min-w-0 flex-1 break-words font-semibold">{h.value}</code>
                   {#if editable}<button type="button" class="btn btn-ghost btn-sm" onclick={() => (value = h.value)}>{t('qr.use')}</button>{/if}
                 </li>
               {/each}
