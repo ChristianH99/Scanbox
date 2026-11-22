@@ -71,6 +71,7 @@ ADMIN_SETTINGS: dict[str, SettingDef] = {
         SettingDef("smtp.from_name", "Scanbox"),
         SettingDef("smtp.max_attachment_mb", 25, type="int"),
         SettingDef("smtp.timeout_s", 30, type="int"),
+        SettingDef("smtp.verify_tls", True, type="bool"),
         SettingDef("paperless.url", None, env=lambda c: c.paperless_url),
         SettingDef(
             "paperless.consume_dir",
