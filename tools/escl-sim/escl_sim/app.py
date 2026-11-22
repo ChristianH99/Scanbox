@@ -44,7 +44,7 @@ XML = "text/xml"
 class TruncatedResponse(Response):
     """Announces the full Content-Length, sends half the body, then kills the connection."""
 
-    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+    async def __call__(self, scope, receive, send) -> None:
         await send({"type": "http.response.start", "status": self.status_code, "headers": self.raw_headers})
         await send({"type": "http.response.body", "body": self.body[: len(self.body) // 2], "more_body": True})
         raise SimulatedConnectionDrop()
@@ -53,11 +53,11 @@ class TruncatedResponse(Response):
 class SimMiddleware:
     """Latency, offline simulation and request logging for /eSCL requests (pure ASGI)."""
 
-    def __init__(self, app, state: SimState):  # noqa: ANN001
+    def __init__(self, app, state: SimState):
         self.app = app
         self.state = state
 
-    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+    async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http" or not scope["path"].startswith("/eSCL"):
             await self.app(scope, receive, send)
             return
@@ -78,7 +78,7 @@ class SimMiddleware:
             )
             return
 
-        async def send_wrapper(message) -> None:  # noqa: ANN001
+        async def send_wrapper(message) -> None:
             if message["type"] == "http.response.start":
                 entry[2] = message["status"]
             await send(message)

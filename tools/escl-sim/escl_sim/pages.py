@@ -99,7 +99,7 @@ class PageSpec:
         if isinstance(data, str):
             return cls(kind=data)
         if not isinstance(data, dict):
-            raise ValueError(f"invalid page spec: {data!r}")
+            raise TypeError(f"invalid page spec: {data!r}")
         known = {f.name for f in dataclasses.fields(cls)}
         unknown = set(data) - known
         if unknown:

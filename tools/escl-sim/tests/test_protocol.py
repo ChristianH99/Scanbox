@@ -6,10 +6,9 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
-from lxml import etree
-
 from escl_sim import SimState
 from escl_sim.caps import NS_PWG, NS_SCAN
+from lxml import etree
 
 from .conftest import create_job, fetch_all, image, scan_settings
 

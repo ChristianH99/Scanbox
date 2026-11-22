@@ -16,7 +16,12 @@ from . import caps as capsmod
 from . import imaging, pages
 from .pages import BLANK, PageSpec
 from .presets import preset
-from .settings import ScanSettings, SettingsError, effective_region, parse_scan_settings, validate
+from .settings import (
+    ScanSettings,
+    effective_region,
+    parse_scan_settings,
+    validate,
+)
 
 # --- job state reasons (eSCL CamelCase of PWG keywords; some are guesses, see SIMULATOR.md)
 R_SCANNING = "JobScanning"

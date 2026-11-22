@@ -115,7 +115,7 @@ class Log:
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
 
@@ -150,7 +150,7 @@ class Http:
                 res["body"] = e.read()
             except Exception:  # noqa: BLE001
                 res["body"] = b""
-        except (TimeoutError, socket.timeout):
+        except TimeoutError:
             res["error"] = "timeout"
         except urllib.error.URLError as e:
             res["error"] = f"{type(e.reason).__name__}: {e.reason}"
@@ -185,7 +185,7 @@ def pretty(body: bytes, headers: dict | None = None) -> str:
         try:
             out = minidom.parseString(body[:MAX_BODY_LOG]).toprettyxml(indent="  ")
             return "\n".join(line for line in out.splitlines() if line.strip())
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110 - not XML after all: log the raw text below
             pass
     if len(body) > MAX_BODY_LOG:
         text += f"\n<... truncated, {len(body)} bytes total>"

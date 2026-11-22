@@ -9,7 +9,6 @@ import time
 import httpx
 import pytest
 import uvicorn
-
 from escl_sim import SimState, create_app
 
 from .conftest import create_job, fetch_all, scan_settings

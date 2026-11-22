@@ -12,7 +12,14 @@ import pytest
 import qrcode
 
 from scanbox.escl.client import EsclClient, ScannerOffline, normalise_base_url
-from scanbox.escl.xml import NS, ScanSettings, build_scan_settings, parse_capabilities, parse_status, parse_xml
+from scanbox.escl.xml import (
+    NS,
+    ScanSettings,
+    build_scan_settings,
+    parse_capabilities,
+    parse_status,
+    parse_xml,
+)
 from scanbox.filenames import TemplateVars, build_filename, sanitize_component, sanitize_subpath, unique_path
 from scanbox.jobs import states as st
 from scanbox.processing import imageops as ops

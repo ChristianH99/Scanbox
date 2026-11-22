@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 
 import numpy as np
 import pytest
 import zxingcpp
-from PIL import Image
-
 from escl_sim import PageSpec, SimState, imaging, pages
+from PIL import Image
 
 from .conftest import create_job, fetch_all, image, scan_settings
 
@@ -174,11 +174,12 @@ async def test_text_is_ocrable(client, tmp_path):
     img = await first_page(client, dpi=300, color="Grayscale8")
     path = tmp_path / "p.png"
     img.save(path)
-    out = subprocess.run(["tesseract", str(path), "-", "-l", "deu+eng" if _has_deu() else "eng"],
-                         capture_output=True, text=True, timeout=60).stdout
+    out = (await asyncio.to_thread(
+        subprocess.run, ["tesseract", str(path), "-", "-l", "deu+eng" if _has_deu() else "eng"],
+        capture_output=True, text=True, timeout=60, check=False)).stdout
     assert "Sehr geehrte Damen und Herren" in out
 
 
 def _has_deu() -> bool:
-    out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout
+    out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, check=False).stdout
     return "deu" in out.split()

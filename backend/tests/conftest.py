@@ -100,7 +100,8 @@ def make_config(data_dir: Path, **kw: Any) -> AppConfig:
 
 @pytest.fixture
 async def harness_factory(tmp_path: Path) -> AsyncIterator[Callable[..., Any]]:
-    from escl_sim import SimState, create_app as create_sim
+    from escl_sim import SimState
+    from escl_sim import create_app as create_sim
 
     from scanbox.main import create_app
 

@@ -4,9 +4,8 @@ import io
 
 import httpx
 import pytest
-from PIL import Image
-
 from escl_sim import SimState, create_app
+from PIL import Image
 
 
 def scan_settings(
