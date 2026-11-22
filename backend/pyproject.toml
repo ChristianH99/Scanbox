@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scanbox"
+version = "0.1.0"
+description = "Self-hosted LAN web app for eSCL network scanners (HP ScanJet Pro N4000)"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "sqlalchemy>=2.0.36",
+  "alembic>=1.14",
+  "httpx>=0.28",
+  "lxml>=5.3",
+  "authlib>=1.4",
+  "itsdangerous>=2.2",
+  "argon2-cffi>=23.1",
+  "cryptography>=44",
+  "aiosmtplib>=3.0",
+  "structlog>=24.4",
+  "opencv-python-headless>=4.10",
+  "numpy>=2.0",
+  "pillow>=11.0",
+  "pikepdf>=9.4",
+  "img2pdf>=0.5.1",
+  "ocrmypdf>=16.6",
+  "zxing-cpp>=2.2",
+  "python-multipart>=0.0.18",
+  "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-timeout>=2.3",
+  "respx>=0.21",
+  "aiosmtpd>=1.4",
+  "ruff>=0.8",
+  "qrcode[pil]>=8.0",
+]
+
+[project.scripts]
+scanbox = "scanbox.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scanbox"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+timeout = 120
+markers = [
+  "ocr: requires tesseract/ghostscript (skipped if missing)",
+  "slow: slow integration tests",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101", "S603", "S607", "B008", "E501", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
