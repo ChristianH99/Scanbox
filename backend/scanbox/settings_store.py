@@ -7,6 +7,7 @@ Secret values are encrypted at rest and never returned to the browser
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,9 +101,26 @@ USER_KEYS = {
 
 
 class SettingsStore:
+    """Admin settings are cached in memory (single process → the cache is authoritative and
+    updated on every write). Reads therefore never open a DB transaction, which matters because
+    they happen inside other transactions (BEGIN IMMEDIATE would otherwise self-deadlock)."""
+
     def __init__(self, config: AppConfig, box: SecretBox) -> None:
         self.config = config
         self.box = box
+        self._cache: dict[str, tuple[Any, bool]] | None = None
+        self._lock = threading.RLock()
+
+    def _load(self) -> dict[str, tuple[Any, bool]]:
+        with self._lock:
+            if self._cache is None:
+                with session_scope() as s:
+                    self._cache = {r.key: (r.value, r.encrypted) for r in s.scalars(select(Setting))}
+            return self._cache
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._cache = None
 
     # ------------------------------------------------------------------ admin
     def env_value(self, key: str) -> Any:
@@ -121,21 +139,11 @@ class SettingsStore:
         env = self.env_value(key)
         if env is not None:
             return env
-        row = self._row(key, session)
-        if row is not None and row.value is not None:
-            if row.encrypted:
-                return self.box.decrypt(row.value)
-            return row.value
+        cached = self._load().get(key)
+        if cached is not None and cached[0] is not None:
+            value, encrypted = cached
+            return self.box.decrypt(value) if encrypted else value
         return d.default if default is None else default
-
-    def _row(self, key: str, session: Session | None) -> Setting | None:
-        if session is not None:
-            return session.get(Setting, key)
-        with session_scope() as s:
-            row = s.get(Setting, key)
-            if row is not None:
-                s.expunge(row)
-            return row
 
     def set(self, key: str, value: Any, session: Session | None = None) -> None:
         d = ADMIN_SETTINGS.get(key)
@@ -155,11 +163,13 @@ class SettingsStore:
                 row.value = stored
                 row.encrypted = enc
 
-        if session is not None:
-            _do(session)
-        else:
-            with session_scope() as s:
-                _do(s)
+        with self._lock:
+            if session is not None:
+                _do(session)
+            else:
+                with session_scope() as s:
+                    _do(s)
+            self._load()[key] = (stored, enc)
 
     def admin_view(self) -> dict[str, dict[str, Any]]:
         """All non-internal settings for the admin UI; secrets masked."""

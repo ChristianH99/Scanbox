@@ -7,8 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..profiles import ProfileSettings, Zone
 from ..processing.render import PageEdits
+from ..profiles import ProfileSettings, Zone
 
 
 class ORM(BaseModel):

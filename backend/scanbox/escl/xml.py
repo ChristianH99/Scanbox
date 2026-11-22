@@ -15,8 +15,8 @@ NS = {
     "scan": "http://schemas.hp.com/imaging/escl/2011/05/03",
     "pwg": "http://www.pwg.org/schemas/2010/12/sm",
 }
-SCAN = "{%s}" % NS["scan"]
-PWG = "{%s}" % NS["pwg"]
+SCAN = "{" + NS["scan"] + "}"
+PWG = "{" + NS["pwg"] + "}"
 
 _PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False, remove_comments=True)
 
@@ -318,6 +318,7 @@ class ScanSettings:
     threshold: int | None = None
     compression_factor: int | None = None
     binary_rendering: str | None = None
+    context_id: str | None = None  # HP walk-up: subscription id
 
 
 def build_scan_settings(s: ScanSettings) -> bytes:
@@ -366,6 +367,8 @@ def build_scan_settings(s: ScanSettings) -> bytes:
         v = getattr(s, attr)
         if v is not None:
             add(root, SCAN + tag, v)
+    if s.context_id:
+        add(root, SCAN + "ContextID", s.context_id)
     if s.blank_page_removal is not None:
         add(root, SCAN + "BlankPageDetection", s.blank_page_removal)
         add(root, SCAN + "BlankPageDetectionAndRemoval", s.blank_page_removal)

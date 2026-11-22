@@ -31,12 +31,14 @@ class Worker:
         self._tasks: list[asyncio.Task] = []
         self._wake: dict[str, asyncio.Event] = {}
         self._stopping = False
+        self._event_loop: asyncio.AbstractEventLoop | None = None
         self._running: dict[int, asyncio.Task] = {}
         # Deliveries interrupted mid-flight by a restart: go through Destination.recover() first.
         self.recovering_deliveries: set[int] = set()
 
     # ---------------------------------------------------------------- lifecycle
     def start(self) -> None:
+        self._event_loop = asyncio.get_running_loop()
         conc = {
             "scanner": 1,
             "process": max(1, int(self.ctx.settings.get("jobs.ocr_concurrency") or 1)),
@@ -53,6 +55,19 @@ class Worker:
         return bool(self._tasks) and all(not t.done() for t in self._tasks)
 
     def notify(self, lane: str | None = None) -> None:
+        """Wake lane loops. Thread-safe (called from sync API handlers in the threadpool)."""
+        loop = self._event_loop
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if loop is not None and running is not loop:
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(self._notify, lane)
+            return
+        self._notify(lane)
+
+    def _notify(self, lane: str | None) -> None:
         for name, ev in self._wake.items():
             if lane is None or lane == name:
                 ev.set()

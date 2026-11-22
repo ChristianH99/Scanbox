@@ -242,6 +242,9 @@ def current_principal(request: Request, s: Session = Depends(get_session)) -> Pr
         raise HTTPException(401, detail={"code": "not_authenticated", "message": "Bitte anmelden"})
     request.state.user_id = p.id
     structlog.contextvars.bind_contextvars(user_id=p.id)
+    # End the auth transaction now: handlers start their own, and long-lived responses
+    # (SSE) must not keep the write lock.
+    s.commit()
     return p
 
 

@@ -16,7 +16,7 @@ import structlog
 from PIL import Image
 from sqlalchemy import func, select
 
-from ..db import session_scope, utcnow
+from ..db import run_db, session_scope, utcnow
 from ..escl.client import EsclError, ScannerBusy, ScanRejected
 from ..escl.xml import ScanSettings
 from ..jobs import states as st
@@ -47,6 +47,8 @@ USER_MESSAGES = {
     "insufficient_disk": "Zu wenig Speicherplatz / not enough disk space",
     "scanner_not_configured": "Kein Scanner konfiguriert / no scanner configured",
     "scan_rejected": "Scanner hat den Auftrag abgelehnt / scanner rejected the job",
+    "connection_lost": "Verbindung während einer Seite abgebrochen – evtl. fehlt ein Blatt, bitte prüfen "
+    "/ connection lost mid-page – a sheet may be missing",
 }
 
 ADF_ERRORS = {
@@ -120,42 +122,63 @@ class ScanRunner:
     def scanner(self):  # noqa: ANN201
         return self.ctx.scanner
 
-    async def run(self, task: Task) -> None:
-        batch_id = int(task.payload["batch_id"])
+    @staticmethod
+    def _load(batch_id: int) -> tuple[int, ProfileSettings] | None:
         with session_scope() as s:
             batch = s.get(Batch, batch_id)
             if batch is None or batch.status not in ("queued",):
                 log.info("scan.skip", batch_id=batch_id, status=batch.status if batch else None)
-                return
+                return None
             doc = s.get(Document, batch.document_id)
             assert doc is not None
             if doc.status in st.TERMINAL:
                 batch.status = "cancelled"
-                return
-            doc_id = doc.id
-            profile = ProfileSettings.model_validate(doc.profile_snapshot)
+                return None
+            return doc.id, ProfileSettings.model_validate(doc.profile_snapshot)
+
+    @staticmethod
+    def _mark_scanning(doc_id: int, batch_id: int) -> None:
+        with session_scope() as s:
+            doc = s.get(Document, doc_id)
+            batch = s.get(Batch, batch_id)
+            assert doc and batch
+            st.transition(s, doc, st.SCANNING, code="scan.started", message=f"Stapel {batch.seq}")
+            batch.status = "scanning"
+            batch.started_at = utcnow()
+
+    @staticmethod
+    def _update_batch(batch_id: int, **values) -> None:  # noqa: ANN003
+        with session_scope() as s:
+            b = s.get(Batch, batch_id)
+            assert b
+            for k, v in values.items():
+                setattr(b, k, v)
+
+    async def run(self, task: Task) -> None:
+        batch_id = int(task.payload["batch_id"])
+        loaded = await run_db(self._load, batch_id)
+        if loaded is None:
+            return
+        doc_id, profile = loaded
+        context_id = task.payload.get("context_id")
 
         structlog.contextvars.bind_contextvars(document_id=doc_id, batch_id=batch_id)
         try:
-            outcome = await self._run_locked(doc_id, batch_id, profile)
+            outcome = await self._run_locked(doc_id, batch_id, profile, context_id)
         finally:
             structlog.contextvars.unbind_contextvars("document_id", "batch_id")
-        self._finish(doc_id, batch_id, outcome)
+        await run_db(self._finish, doc_id, batch_id, outcome)
 
-    async def _run_locked(self, doc_id: int, batch_id: int, profile: ProfileSettings) -> BatchOutcome:
+    async def _run_locked(
+        self, doc_id: int, batch_id: int, profile: ProfileSettings, context_id: str | None = None
+    ) -> BatchOutcome:
         min_free = int(self.ctx.settings.get("disk.min_free_mb") or 0)
         free = self.ctx.storage.free_mb()
         if free < min_free:
             return BatchOutcome(0, "insufficient_disk", f"only {free} MB free, need {min_free} MB")
         async with self.scanner.lock:
             self.scanner.set_active(doc_id)
-            with session_scope() as s:
-                doc = s.get(Document, doc_id)
-                batch = s.get(Batch, batch_id)
-                assert doc and batch
-                st.transition(s, doc, st.SCANNING, code="scan.started", message=f"Stapel {batch.seq}")
-                batch.status = "scanning"
-                batch.started_at = utcnow()
+            await run_db(self._mark_scanning, doc_id, batch_id)
             job_uri: str | None = None
             received = 0
             try:
@@ -165,22 +188,19 @@ class ScanRunner:
                 if err:
                     raise ScanFailure(err, USER_MESSAGES[err])
                 settings = build_escl_settings(profile, self.scanner.capabilities)
-                with session_scope() as s:
-                    b = s.get(Batch, batch_id)
-                    assert b
-                    b.settings = {k: v for k, v in settings.__dict__.items() if v is not None}
+                settings.context_id = context_id
+                await run_db(self._update_batch, batch_id,
+                             settings={k: v for k, v in settings.__dict__.items() if v is not None})
                 job_uri = await self._create_job_with_busy_retry(client, settings)
-                with session_scope() as s:
-                    b = s.get(Batch, batch_id)
-                    assert b
-                    b.escl_job_uri = job_uri
+                await run_db(self._update_batch, batch_id, escl_job_uri=job_uri)
                 log.info("scan.job_created", job_uri=job_uri)
                 duplex = profile.source == "adf_duplex"
                 while True:
                     page = await client.next_document(job_uri)
                     if page is None:
                         break
-                    self._store_page(doc_id, batch_id, page.content, page.content_type, duplex, received)
+                    await run_db(self._store_page, doc_id, batch_id, page.content, page.content_type, duplex,
+                                 received)
                     received += 1
                 # The job ended – find out whether it ended well.
                 await self._check_job_end(client, job_uri, received)
@@ -243,13 +263,7 @@ class ScanRunner:
         reasons = " ".join(job.reasons).lower() if job else ""
         aborted = job is not None and (job.state or "").lower() in ("aborted", "canceled", "cancelled")
         if "multipick" in reasons and not aborted:
-            with session_scope() as s:
-                b = s.get(Batch, self._batch_id_for(s, job_uri))
-                if b:
-                    doc = s.get(Document, b.document_id)
-                    if doc:
-                        st.add_event(s, doc, "scan.multipick_continued",
-                                     "Mehrfacheinzug erkannt, Scan wurde fortgesetzt – Seiten prüfen", "warning")
+            await run_db(self._multipick_warning, job_uri)
         if aborted:
             code = adf_err or ("multipick" if "multipick" in reasons else
                                "paper_jam" if "jam" in reasons else "scanner_error")
@@ -258,6 +272,15 @@ class ScanRunner:
             raise ScanFailure(adf_err, USER_MESSAGES[adf_err])
         if received == 0:
             raise ScanFailure("feeder_empty", USER_MESSAGES["feeder_empty"])
+
+    def _multipick_warning(self, job_uri: str) -> None:
+        with session_scope() as s:
+            b = s.get(Batch, self._batch_id_for(s, job_uri))
+            if b:
+                doc = s.get(Document, b.document_id)
+                if doc:
+                    st.add_event(s, doc, "scan.multipick_continued",
+                                 "Mehrfacheinzug erkannt, Scan wurde fortgesetzt – Seiten prüfen", "warning")
 
     @staticmethod
     def _batch_id_for(s, job_uri: str) -> int | None:  # noqa: ANN001

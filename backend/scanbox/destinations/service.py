@@ -13,7 +13,7 @@ import httpx
 import structlog
 from sqlalchemy import select
 
-from ..db import session_scope, utcnow
+from ..db import run_db, session_scope, utcnow
 from ..jobs import states as st
 from ..models import ArtifactRow, Delivery, Document, Task, User
 from ..processing.ocr import ghostscript_compress
@@ -114,17 +114,17 @@ class DeliveryRunner:
     def __init__(self, ctx) -> None:  # noqa: ANN001
         self.ctx = ctx
 
-    async def run(self, task: Task, *, recovering: bool = False) -> bool:
-        """Returns False if a retryable error occurred (the queue reschedules)."""
+    def _begin(self, task: Task):  # noqa: ANN202
+        """Sync (thread): mark running, build the job. Returns None if nothing to do."""
         assert task.delivery_id is not None
         with session_scope() as s:
             dl = s.get(Delivery, task.delivery_id)
             if dl is None or dl.status in ("done", "cancelled"):
-                return True
+                return None
             doc = s.get(Document, dl.document_id)
             assert doc
             if doc.owner_id is None or doc.status not in (st.DELIVERING, st.NEEDS_ATTENTION, st.DONE):
-                return True
+                return None
             user = s.get(User, doc.owner_id)
             assert user
             previous = dict(dl.result or {})
@@ -132,24 +132,45 @@ class DeliveryRunner:
             dl.attempts += 1
             try:
                 job = build_job(self.ctx, s, dl, doc, user)
+                dest = get_destination(dl.destination_type)
             except DeliveryError as e:
                 self._record_failure(s, dl, doc, e, final=True)
-                return True
-            dest = get_destination(dl.destination_type)
+                return None
             try:
                 cfg = dest.Config.model_validate(dl.config or {})
             except Exception as e:  # noqa: BLE001
                 self._record_failure(s, dl, doc, DeliveryError("invalid_config", f"Ungültige Konfiguration: {e}"),
                                      final=True)
-                return True
-            delivery_id, user_id, doc_id = dl.id, user.id, doc.id
+                return None
             self._publish(dl, doc)
+            return dl.id, user.id, doc.id, previous, job, dest, cfg
+
+    def _fail(self, task_id: int, delivery_id: int, doc_id: int, e: DeliveryError, *, final: bool | None) -> None:
+        with session_scope() as s:
+            dl = s.get(Delivery, delivery_id)
+            doc = s.get(Document, doc_id)
+            assert dl and doc
+            if final is None:
+                t = s.get(Task, task_id)
+                final = not e.retryable or (t is not None and t.attempts >= t.max_attempts)
+            self._record_failure(s, dl, doc, e, final=final)
+
+    @staticmethod
+    def _save_progress(delivery_id: int, data: dict[str, Any]) -> None:
+        with session_scope() as s:
+            d2 = s.get(Delivery, delivery_id)
+            if d2:
+                d2.result = {**(d2.result or {}), **data}
+
+    async def run(self, task: Task, *, recovering: bool = False) -> bool:
+        """Returns False if a retryable error occurred (the queue reschedules)."""
+        begun = await run_db(self._begin, task)
+        if begun is None:
+            return True
+        delivery_id, user_id, doc_id, previous, job, dest, cfg = begun
 
         async def progress(data: dict[str, Any]) -> None:
-            with session_scope() as s2:
-                d2 = s2.get(Delivery, delivery_id)
-                if d2:
-                    d2.result = {**(d2.result or {}), **data}
+            await run_db(self._save_progress, delivery_id, data)
 
         env = make_env(self.ctx, user_id, {"progress": progress, "previous_result": previous})
         structlog.contextvars.bind_contextvars(document_id=doc_id, delivery_id=delivery_id)
@@ -157,38 +178,26 @@ class DeliveryRunner:
             if recovering:
                 action = await dest.recover(job, cfg, env, previous)
                 if action == RecoverAction.DONE:
-                    self._success(delivery_id, "Bereits zugestellt (nach Neustart verifiziert)", previous)
+                    await run_db(self._success, delivery_id, "Bereits zugestellt (nach Neustart verifiziert)",
+                                 previous)
                     return True
                 if action == RecoverAction.NEEDS_ATTENTION:
-                    with session_scope() as s:
-                        dl = s.get(Delivery, delivery_id)
-                        doc = s.get(Document, doc_id)
-                        assert dl and doc
-                        self._record_failure(s, dl, doc, DeliveryError(
-                            "interrupted", "Unterbrochen – wurde evtl. schon gesendet. Bitte prüfen und ggf. "
-                            "manuell erneut senden."), final=True)
+                    await run_db(self._fail, task.id, delivery_id, doc_id, DeliveryError(
+                        "interrupted", "Unterbrochen – wurde evtl. schon gesendet. Bitte prüfen und ggf. "
+                        "manuell erneut senden."), final=True)
                     return True
             result = await dest.deliver(job, cfg, env)
         except DeliveryError as e:
-            with session_scope() as s:
-                dl = s.get(Delivery, delivery_id)
-                doc = s.get(Document, doc_id)
-                assert dl and doc
-                t = s.get(Task, task.id)
-                final = not e.retryable or (t is not None and t.attempts >= t.max_attempts)
-                self._record_failure(s, dl, doc, e, final=final)
+            await run_db(self._fail, task.id, delivery_id, doc_id, e, final=None)
             return not e.retryable
         except Exception as e:  # noqa: BLE001 - plugin bug must not kill the worker
             log.exception("delivery.crash")
-            with session_scope() as s:
-                dl = s.get(Delivery, delivery_id)
-                doc = s.get(Document, doc_id)
-                assert dl and doc
-                self._record_failure(s, dl, doc, DeliveryError("internal_error", f"Interner Fehler: {e}"), final=True)
+            await run_db(self._fail, task.id, delivery_id, doc_id,
+                         DeliveryError("internal_error", f"Interner Fehler: {e}"), final=True)
             return True
         finally:
             structlog.contextvars.unbind_contextvars("document_id", "delivery_id")
-        self._success(delivery_id, result.message, result.detail)
+        await run_db(self._success, delivery_id, result.message, result.detail)
         return True
 
     def _success(self, delivery_id: int, message: str, detail: dict[str, Any]) -> None:
@@ -242,11 +251,11 @@ class DeliveryRunner:
         )
 
 
-async def send_webhook(ctx, task: Task) -> bool:  # noqa: ANN001
+def _webhook_payload(ctx, task: Task):  # noqa: ANN001, ANN202
     with session_scope() as s:
         doc = s.get(Document, task.document_id)
         if doc is None or not doc.webhook_url:
-            return True
+            return None
         arts = s.scalars(select(ArtifactRow).where(ArtifactRow.document_id == doc.id)).all()
         payload = {
             "event": "scan.finished",
@@ -265,7 +274,14 @@ async def send_webhook(ctx, task: Task) -> bool:  # noqa: ANN001
                 for a in arts if a.kind != "pdf_image"
             ],
         }
-        url = doc.webhook_url
+        return doc.webhook_url, payload
+
+
+async def send_webhook(ctx, task: Task) -> bool:  # noqa: ANN001
+    loaded = await run_db(_webhook_payload, ctx, task)
+    if loaded is None:
+        return True
+    url, payload = loaded
     try:
         async with ctx.http_client_factory(timeout=httpx.Timeout(15.0)) as client:
             resp = await client.post(url, json=payload, headers={"User-Agent": "Scanbox/1.0"})

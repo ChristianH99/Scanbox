@@ -20,7 +20,7 @@ import structlog
 from PIL import Image
 from sqlalchemy import func, select
 
-from ..db import session_scope, utcnow
+from ..db import run_db, session_scope, utcnow
 from ..filenames import TemplateVars, build_filename, render_filename_template, sanitize_component
 from ..jobs import states as st
 from ..jobs.queue import enqueue
@@ -151,16 +151,17 @@ class Processor:
         finally:
             structlog.contextvars.unbind_contextvars("document_id", "run")
 
-    async def _run(self, doc_id: int, run: int) -> None:
+    def _prepare(self, doc_id: int, run: int):  # noqa: ANN202
+        """Load inputs (sync, runs in a thread). None → nothing to do."""
         with session_scope() as s:
             doc = s.get(Document, doc_id)
             if doc is None or doc.status != st.PROCESSING or doc.processing_run != run:
                 log.info("process.skip", status=doc.status if doc else None)
-                return
+                return None
             if doc.raw_expired:
                 st.transition(s, doc, st.FAILED, code="process.raw_expired", level="error",
                               message="Originalseiten sind abgelaufen / raw pages expired", error_code="raw_expired")
-                return
+                return None
             profile = ProfileSettings.model_validate(doc.profile_snapshot)
             pages = s.scalars(
                 select(Page).where(Page.document_id == doc_id, Page.deleted.is_(False)).order_by(Page.position)
@@ -173,11 +174,23 @@ class Processor:
             if not inputs:
                 st.transition(s, doc, st.NEEDS_ATTENTION, code="process.no_pages", level="error",
                               message="Dokument hat keine Seiten / no pages", error_code="no_pages")
-                return
+                return None
             manual_qr = doc.qr_value if doc.qr_source in ("manual", "none") else None
-            qr_source = doc.qr_source
             st.add_event(s, doc, "process.started", f"Lauf {run}, {len(inputs)} Seite(n)")
+            return profile, inputs, manual_qr, doc.qr_source
 
+    @staticmethod
+    def _attention(doc_id: int, code: str, message: str, level: str, error_code: str) -> None:
+        with session_scope() as s:
+            doc = s.get(Document, doc_id)
+            assert doc
+            st.transition(s, doc, st.NEEDS_ATTENTION, code=code, message=message, level=level, error_code=error_code)
+
+    async def _run(self, doc_id: int, run: int) -> None:
+        prepared = await run_db(self._prepare, doc_id, run)
+        if prepared is None:
+            return
+        profile, inputs, manual_qr, qr_source = prepared
         run_dir = self.ctx.storage.processed_run_dir(doc_id, run)
         if run_dir.exists():
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -185,21 +198,14 @@ class Processor:
         try:
             result = await self._process(doc_id, run, profile, inputs, run_dir, manual_qr, qr_source)
         except ProcessingBlocked as e:
-            with session_scope() as s:
-                doc = s.get(Document, doc_id)
-                assert doc
-                st.transition(s, doc, st.NEEDS_ATTENTION, code=f"process.{e.code}", message=e.message,
-                              level="warning", error_code=e.code)
+            await run_db(self._attention, doc_id, f"process.{e.code}", e.message, "warning", e.code)
             return
         except (OcrError, OSError, ValueError) as e:
             log.exception("process.failed")
-            with session_scope() as s:
-                doc = s.get(Document, doc_id)
-                assert doc
-                st.transition(s, doc, st.NEEDS_ATTENTION, code="process.error", level="error",
-                              message=f"Verarbeitung fehlgeschlagen: {e}"[:1000], error_code="processing_failed")
+            await run_db(self._attention, doc_id, "process.error", f"Verarbeitung fehlgeschlagen: {e}"[:1000],
+                         "error", "processing_failed")
             return
-        self._commit(doc_id, run, profile, result, run_dir)
+        await run_db(self._commit, doc_id, run, profile, result, run_dir)
 
     async def _process(
         self,
@@ -214,6 +220,7 @@ class Processor:
         res = ProcessResult()
         need_qr = profile.qr.enabled and qr_source not in ("manual", "none")
         outputs: list[PageOutput] = []
+        owner = await run_db(self._owner, doc_id)
         for p in inputs:
             # Splitting needs QR values of every page; otherwise respect qr.pages.
             detect = profile.processing.split.mode != "off" or (
@@ -221,11 +228,11 @@ class Processor:
             )
             o = await asyncio.to_thread(process_page_sync, p, profile, run_dir, detect)
             outputs.append(o)
-            self._save_page_analysis(o)
+            await run_db(self._save_page_analysis, o)
             self.ctx.bus.publish(
                 "document.progress",
                 {"id": doc_id, "step": "pages", "done": p.index + 1, "total": len(inputs)},
-                audience=self._owner(doc_id),
+                audience=owner,
             )
 
         # QR value
@@ -287,18 +294,21 @@ class Processor:
             return segments[0] if segments else outputs
         from ..documents import split_into_children
 
-        with session_scope() as s:
-            children = split_into_children(s, doc_id, [[o.id for o in seg] for seg in segments[1:]])
-            dropped = {o.id for o in outputs} - {o.id for seg in segments for o in seg}
-            if dropped:
-                for pid in dropped:
-                    p = s.get(Page, pid)
-                    if p:
-                        p.deleted = True
-            doc = s.get(Document, doc_id)
-            assert doc
-            st.add_event(s, doc, "process.split", f"In {len(segments)} Dokumente aufgeteilt",
-                         data={"children": children})
+        def _db() -> None:
+            with session_scope() as s:
+                children = split_into_children(s, doc_id, [[o.id for o in seg] for seg in segments[1:]])
+                dropped = {o.id for o in outputs} - {o.id for seg in segments for o in seg}
+                if dropped:
+                    for pid in dropped:
+                        p = s.get(Page, pid)
+                        if p:
+                            p.deleted = True
+                doc = s.get(Document, doc_id)
+                assert doc
+                st.add_event(s, doc, "process.split", f"In {len(segments)} Dokumente aufgeteilt",
+                             data={"children": children})
+
+        await run_db(_db)
         return segments[0]
 
     async def _assemble(

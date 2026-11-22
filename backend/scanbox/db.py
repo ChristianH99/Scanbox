@@ -40,15 +40,18 @@ def make_engine(db_path: Path) -> Engine:
     )
     event.listen(eng, "connect", _on_connect)
 
-    # Let SQLAlchemy control transactions (pysqlite's implicit handling is buggy with
-    # savepoints). Transactions are kept short; there is a single writer process.
+    # SQLAlchemy controls transactions (pysqlite's implicit handling is buggy). Every transaction
+    # starts with BEGIN IMMEDIATE: the write lock is taken up-front and waiting for it honours
+    # busy_timeout. Deferred transactions that read and then write can fail instantly with
+    # SQLITE_BUSY (lock upgrade) under concurrency – unacceptable for the job queue.
+    # Rule: never hold a transaction across a long await (commit first).
     @event.listens_for(eng, "connect")
     def _no_pysqlite_tx(dbapi_conn, _rec):  # noqa: ANN001
         dbapi_conn.isolation_level = None
 
     @event.listens_for(eng, "begin")
     def _begin(conn):  # noqa: ANN001
-        conn.exec_driver_sql("BEGIN")
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     return eng
 
@@ -96,6 +99,17 @@ def get_session() -> Iterator[Session]:
     """FastAPI dependency."""
     with session_scope() as s:
         yield s
+
+
+async def run_db(fn, *args, **kwargs):  # noqa: ANN001, ANN201
+    """Run blocking DB work off the event loop.
+
+    Rule: async code never opens a transaction on the loop thread. BEGIN IMMEDIATE may wait
+    for the write lock, and the current holder might need the loop to commit (deadlock).
+    """
+    import asyncio
+
+    return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 def check_writable() -> None:

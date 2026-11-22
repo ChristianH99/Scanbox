@@ -11,7 +11,14 @@ from urllib.parse import urljoin, urlparse
 import httpx
 import structlog
 
-from .xml import ScanSettings, ScannerCapabilities, ScannerStatus, build_scan_settings, parse_capabilities, parse_status
+from .xml import (
+    ScannerCapabilities,
+    ScannerStatus,
+    ScanSettings,
+    build_scan_settings,
+    parse_capabilities,
+    parse_status,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -47,6 +54,16 @@ class ScanRejected(EsclError):
 
 class JobGone(EsclError):
     code = "scanner_job_lost"
+
+
+class ConnectionLost(EsclError):
+    """The connection broke after the request reached the scanner (e.g. mid-page).
+
+    Not retried for NextDocument: the device may already count the page as delivered, so a
+    blind retry would silently skip a sheet. The caller stops the batch and tells the user.
+    """
+
+    code = "connection_lost"
 
 
 @dataclass
@@ -153,6 +170,7 @@ class EsclClient:
         *,
         retry_on_503: bool = True,
         timeout: httpx.Timeout | None = None,
+        idempotent: bool = True,
         **kw,
     ) -> httpx.Response:
         url = self.url(path)
@@ -160,10 +178,16 @@ class EsclClient:
         for attempt in range(self.retry.attempts):
             try:
                 resp = await self.client.request(method, url, timeout=timeout or DEFAULT_TIMEOUT, **kw)
-            except httpx.TimeoutException as e:
+            except (httpx.PoolTimeout, httpx.WriteTimeout) as e:
                 last_exc = ScannerTimeout(f"{method} {path}: timeout")
                 log.warning("escl.timeout", method=method, path=path, attempt=attempt, error=str(e))
-            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as e:
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                # Never reached the scanner → always safe to retry.
+                last_exc = ScannerOffline(f"{method} {path}: {type(e).__name__}: {e}")
+                log.warning("escl.connect_error", method=method, path=path, attempt=attempt, error=str(e))
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError, httpx.ReadTimeout) as e:
+                if not idempotent:
+                    raise ConnectionLost(f"{method} {path}: connection lost: {type(e).__name__}") from e
                 last_exc = ScannerOffline(f"{method} {path}: {type(e).__name__}: {e}")
                 log.warning("escl.transport_error", method=method, path=path, attempt=attempt, error=str(e))
             except httpx.HTTPError as e:
@@ -237,7 +261,7 @@ class EsclClient:
         deadline = loop.time() + max_wait_s
         attempt = 0
         while True:
-            resp = await self._request("GET", url, retry_on_503=False, timeout=PAGE_TIMEOUT)
+            resp = await self._request("GET", url, retry_on_503=False, timeout=PAGE_TIMEOUT, idempotent=False)
             if resp.status_code == 200:
                 ctype = resp.headers.get("Content-Type", "application/octet-stream").split(";")[0].strip()
                 if not resp.content:

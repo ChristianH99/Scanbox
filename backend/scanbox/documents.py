@@ -53,6 +53,7 @@ def create_scan(
     idempotency_key: str | None = None,
     add_qr_to_filename: bool | None = None,
     title: str | None = None,
+    scan_payload: dict[str, Any] | None = None,
 ) -> Document:
     owner_id = user.id if user else None
     if idempotency_key and owner_id is not None:
@@ -98,17 +99,17 @@ def create_scan(
     s.add(doc)
     s.flush()
     st.add_event(s, doc, "created", f"Profil {profile.name}")
-    _new_batch(s, doc)
+    _new_batch(s, doc, scan_payload)
     st.publish_document(doc, "document.created")
     return doc
 
 
-def _new_batch(s: Session, doc: Document) -> Batch:
+def _new_batch(s: Session, doc: Document, extra: dict[str, Any] | None = None) -> Batch:
     seq = (s.scalar(select(func.max(Batch.seq)).where(Batch.document_id == doc.id)) or 0) + 1
     b = Batch(document_id=doc.id, seq=seq, status="queued")
     s.add(b)
     s.flush()
-    enqueue(s, "scan", idempotency_key=f"scan:{b.id}", document_id=doc.id, payload={"batch_id": b.id})
+    enqueue(s, "scan", idempotency_key=f"scan:{b.id}", document_id=doc.id, payload={"batch_id": b.id, **(extra or {})})
     return b
 
 
@@ -236,6 +237,7 @@ def split_into_children(s: Session, parent_id: int, groups: list[list[str]], *, 
             start_processing(s, child)
         st.publish_document(child, "document.created")
         children.append(child.id)
+    s.flush()
     parent.page_count = s.scalar(
         select(func.count(Page.id)).where(Page.document_id == parent.id, Page.deleted.is_(False))
     ) or 0

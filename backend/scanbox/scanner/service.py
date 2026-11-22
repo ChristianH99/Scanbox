@@ -105,9 +105,13 @@ class ScannerService:
     async def refresh_capabilities(self) -> ScannerCapabilities:
         caps, xml = await self.client().get_capabilities()
         self._caps = caps
-        self.ctx.settings.set("scanner.capabilities", caps.to_dict())
-        self.ctx.settings.set("scanner.capabilities_xml", xml.decode("utf-8", errors="replace"))
-        self.ctx.settings.set("scanner.capabilities_fetched_at", utcnow().isoformat())
+
+        def _persist() -> None:
+            self.ctx.settings.set("scanner.capabilities", caps.to_dict())
+            self.ctx.settings.set("scanner.capabilities_xml", xml.decode("utf-8", errors="replace"))
+            self.ctx.settings.set("scanner.capabilities_fetched_at", utcnow().isoformat())
+
+        await asyncio.to_thread(_persist)
         self.ctx.bus.publish("scanner.capabilities", {"model": caps.make_and_model}, ALL)
         return caps
 
