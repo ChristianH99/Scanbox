@@ -150,5 +150,6 @@ def _upsert_oidc_user(ctx: AppContext, request: Request, resp: RedirectResponse,
         user.is_admin = is_admin
         s.flush()
         auth.create_session(s, user, request, resp, "oidc", ctx.config.cookie_secure)
-        log.info("auth.login", user_id=user.id, method="oidc", admin=is_admin)
+        # Claim *names* only (no values) – helps configuring the admin claim.
+        log.info("auth.login", user_id=user.id, method="oidc", admin=is_admin, claims=sorted(claims))
     return None

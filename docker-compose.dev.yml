@@ -1,0 +1,47 @@
+# Development / e2e stack: Scanbox (built from source) + eSCL simulator + mock Paperless.
+#   docker compose -f docker-compose.dev.yml up --build
+#   → http://localhost:8080 (admin / adminadmin), simulator control: http://localhost:8090/_sim/state
+name: scanbox-dev
+
+services:
+  scanbox:
+    build: .
+    image: scanbox:dev
+    ports: ["8080:8080"]
+    environment:
+      SCANBOX_SCANNER_URL: http://escl-sim:8090
+      SCANBOX_BASE_URL: http://localhost:8080
+      SCANBOX_COOKIE_SECURE: "false"
+      SCANBOX_SECRET_KEY: dev-secret-key-change-me-0123456789
+      SCANBOX_ADMIN_PASSWORD: adminadmin
+      SCANBOX_MIN_FREE_MB: "100"
+      SCANBOX_OUTPUT_ROOTS: "Scans=/output"
+      SCANBOX_PAPERLESS_URL: http://paperless-mock:8000
+      SCANBOX_LOG_JSON: "false"
+    volumes:
+      - dev-data:/data
+      - dev-output:/output
+    depends_on:
+      escl-sim: { condition: service_started }
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4g }
+
+  escl-sim:
+    build: ./tools/escl-sim
+    image: scanbox-escl-sim:dev
+    ports: ["8090:8090"]
+
+  paperless-mock:
+    image: scanbox:test-tools
+    build:
+      context: .
+      target: test
+    working_dir: /src/backend
+    command: ["python", "-m", "tests.mocks.paperless", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["8000:8000"]
+    profiles: ["paperless"]
+
+volumes:
+  dev-data:
+  dev-output:

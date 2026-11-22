@@ -1,0 +1,69 @@
+# Scanbox on a Synology NAS (Container Manager → Project → "Create" → paste/upload this file).
+# See docs/DEPLOYMENT.md for the full walkthrough (reverse proxy, SSO client, volumes, secrets).
+name: scanbox
+
+services:
+  scanbox:
+    image: ghcr.io/christianh99/scanbox:latest
+    container_name: scanbox
+    restart: unless-stopped
+    # Matches the owner of the shared folders below (Synology: `id <user>` via SSH, or use 1026:100 etc.)
+    user: "1026:100"
+    ports:
+      # Only reachable via DSM's reverse proxy (HTTPS). Bind to localhost so the plain-HTTP port
+      # is not exposed on the LAN.
+      - "127.0.0.1:8085:8080"
+    environment:
+      TZ: Europe/Berlin
+      SCANBOX_BASE_URL: https://scanbox.home.lan        # the HTTPS URL users open (reverse proxy)
+      SCANBOX_SCANNER_URL: http://192.168.1.50          # optional – can also be set in the admin UI
+      SCANBOX_SECRET_KEY_FILE: /run/secrets/scanbox_secret_key
+      SCANBOX_ADMIN_USERNAME: admin
+      SCANBOX_ADMIN_PASSWORD_FILE: /run/secrets/scanbox_admin_password
+      # Synology SSO Server (OIDC) – or configure in the admin UI
+      SCANBOX_OIDC_ISSUER: https://sso.home.lan/webman/sso
+      SCANBOX_OIDC_CLIENT_ID: scanbox
+      SCANBOX_OIDC_CLIENT_SECRET_FILE: /run/secrets/scanbox_oidc_secret
+      SCANBOX_OIDC_ADMIN_CLAIM: groups
+      SCANBOX_OIDC_ADMIN_VALUE: administrators
+      # Output roots users may deliver to (name=path inside the container; mount them below)
+      SCANBOX_OUTPUT_ROOTS: "Scans=/output/scans;Familie=/output/family"
+      SCANBOX_PAPERLESS_CONSUME_DIR: /paperless-consume
+      # Resources: one OCR job at a time, 2 Tesseract threads, low priority
+      SCANBOX_OCR_CONCURRENCY: "1"
+      SCANBOX_OCR_JOBS: "2"
+      SCANBOX_WALKUP_ENABLED: "false"
+    volumes:
+      - /volume1/docker/scanbox/data:/data
+      - /volume1/scans:/output/scans
+      - /volume1/family/Dokumente:/output/family
+      - /volume1/docker/paperless/consume:/paperless-consume
+    secrets:
+      - scanbox_secret_key
+      - scanbox_admin_password
+      - scanbox_oidc_secret
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+        reservations:
+          memory: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+secrets:
+  scanbox_secret_key:
+    file: /volume1/docker/scanbox/secrets/secret_key
+  scanbox_admin_password:
+    file: /volume1/docker/scanbox/secrets/admin_password
+  scanbox_oidc_secret:
+    file: /volume1/docker/scanbox/secrets/oidc_client_secret

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -18,6 +19,9 @@ from scanbox.security.auth import login_limiter
 
 ADMIN_PW = "admin-password-123"
 HAVE_TESSERACT = shutil.which("tesseract") is not None and shutil.which("ocrmypdf") is not None
+
+if os.environ.get("SCANBOX_REQUIRE_OCR") == "1" and not HAVE_TESSERACT:
+    raise RuntimeError("SCANBOX_REQUIRE_OCR=1 but tesseract/ocrmypdf are missing – OCR tests would be skipped")
 
 requires_ocr = pytest.mark.skipif(not HAVE_TESSERACT, reason="tesseract/ocrmypdf not installed")
 
