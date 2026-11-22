@@ -55,6 +55,7 @@ Container Manager → *Project* → *Create* → path `/volume1/docker/scanbox`,
 | `SCANBOX_WALKUP_ENABLED` | Experimental HP walk-up scan (see `docs/WALKUP.md`). |
 | `SCANBOX_MAX_QUEUED_SCANS` (5) | Bound on queued scans. |
 | `SCANBOX_LOG_LEVEL` (INFO), `SCANBOX_LOG_JSON` (true) | Logging. Logs also go to `/data/logs/scanbox.log` (downloadable in Admin → Diagnostics). |
+| `SCANBOX_FORWARDED_ALLOW_IPS` (`127.0.0.1,172.16.0.0/12`) | Proxies whose `X-Forwarded-For` is trusted (DSM nginx reaches the container via the Docker bridge). Never set `*`: clients could then forge their IP and bypass the login rate limit. |
 | `SCANBOX_COOKIE_SECURE` (true) | Keep `true` behind HTTPS. Only set `false` for plain-HTTP testing. |
 
 **Variables set in the environment are locked**: the admin UI shows them read-only. Anything not set here can be changed in the admin UI.
