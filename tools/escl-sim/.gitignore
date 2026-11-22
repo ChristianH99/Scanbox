@@ -1,0 +1,2 @@
+# root .gitignore ignores data/ (runtime data); the package data dir must be tracked
+!escl_sim/data/
