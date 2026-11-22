@@ -1,0 +1,52 @@
+import type { components } from './schema';
+
+type S = components['schemas'];
+export type User = S['UserOut'];
+export type Me = S['MeOut'];
+export type AuthConfig = S['AuthConfigOut'];
+export type ScannerStatus = S['ScannerStatusOut'];
+export type Capabilities = S['CapabilitiesOut'];
+export type InputCaps = S['InputCapsOut'];
+export type RangeCaps = S['RangeOut'];
+export type TestConnection = S['TestConnectionOut'];
+export type Profile = S['ProfileOut'];
+export type ProfileIn = S['ProfileIn'];
+export type ProfileSettings = S['ProfileSettings'];
+export type DestinationConfig = S['DestinationConfig'];
+export type QrOptions = S['QrOptions'];
+export type Zone = S['Zone'];
+export type DocStatus = S['DocumentSummary']['status'];
+export type DocumentSummary = S['DocumentSummary'];
+export type DocumentDetail = S['DocumentDetail'];
+export type DocumentList = S['DocumentList'];
+export type DocumentPatch = S['DocumentPatch'];
+export type Page = S['PageOut'];
+export type PageEdits = S['PageEdits'];
+export type Batch = S['BatchOut'];
+export type Delivery = S['DeliveryOut'];
+export type Artifact = S['ArtifactOut'];
+export type DocEvent = S['EventOut'];
+export type QrDetect = S['QrDetectOut'];
+export type ScanIn = S['ScanIn'];
+export type Contact = S['ContactOut'];
+export type ContactIn = S['ContactIn'];
+export type UserSettings = S['UserSettingsOut'];
+export type UserSettingsIn = S['UserSettingsIn'];
+export type ApiToken = S['ApiTokenOut'];
+export type ApiTokenCreated = S['ApiTokenCreated'];
+export type AdminSettingValue = S['AdminSettingValue'];
+export type AdminSettings = S['AdminSettingsOut'];
+export type Usage = S['UsageOut'];
+export type ClearCache = S['ClearCacheOut'];
+export type TestResult = S['TestResultOut'];
+export type Diagnostics = S['DiagnosticsOut'];
+
+export interface QrHit {
+  value: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  page_id?: string | null;
+  page_index?: number | null;
+}
