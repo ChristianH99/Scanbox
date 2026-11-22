@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "escl-sim"
+version = "0.1.0"
+description = "eSCL scanner simulator with fault injection (HP ScanJet Pro N4000 snw1) for Scanbox"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pillow>=10.3",
+    "numpy>=1.26",
+    "qrcode[pil]>=7.4",
+    "lxml>=5.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27", "zxing-cpp>=2.2"]
+
+[project.scripts]
+escl-sim = "escl_sim.__main__:main"
+
+[tool.setuptools]
+packages = ["escl_sim"]
+
+[tool.setuptools.package-data]
+escl_sim = ["data/*.xml", "data/fonts/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
