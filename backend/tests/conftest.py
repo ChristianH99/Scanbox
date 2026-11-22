@@ -74,6 +74,9 @@ class Harness:
             last = r.json()
             if last["status"] in statuses:
                 return last
+            # States that only change through user action: fail fast instead of waiting for the timeout.
+            if last["status"] in {"failed", "needs_attention", "discarded", "expired"}:
+                break
             await asyncio.sleep(0.1)
         raise AssertionError(f"document {doc_id} stuck in {last and last['status']}: "
                              f"{[e['code'] + ' ' + e['message'] for e in (last or {}).get('events', [])][:8]}")

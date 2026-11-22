@@ -222,6 +222,20 @@ class SettingsStore:
             with session_scope() as s:
                 _do(s)
 
+    def user_all(self, user_id: int, session: Session | None = None) -> dict[str, Any]:
+        """All user settings, secrets decrypted (sync – call from a thread)."""
+
+        def _do(s: Session) -> dict[str, Any]:
+            out: dict[str, Any] = {}
+            for r in s.scalars(select(UserSetting).where(UserSetting.user_id == user_id)):
+                out[r.key] = self.box.decrypt(r.value) if r.encrypted and r.value is not None else r.value
+            return out
+
+        if session is not None:
+            return _do(session)
+        with session_scope() as s:
+            return _do(s)
+
     def user_view(self, user_id: int, session: Session) -> dict[str, Any]:
         rows = session.scalars(select(UserSetting).where(UserSetting.user_id == user_id)).all()
         out: dict[str, Any] = {}
@@ -266,15 +280,21 @@ def _coerce(d: SettingDef, value: Any) -> Any:
 
 
 class UserSettingsAccessor:
-    """Adapter implementing destinations.base.SettingsAccessor for one user."""
+    """Adapter implementing destinations.base.SettingsAccessor for one user.
 
-    def __init__(self, store: SettingsStore, user_id: int) -> None:
+    User values are preloaded (in a worker thread) so that destinations running on the event loop
+    never open a DB transaction. Admin values come from the in-memory cache.
+    """
+
+    def __init__(self, store: SettingsStore, user_id: int, user_values: dict[str, Any]) -> None:
         self.store = store
         self.user_id = user_id
+        self._user = user_values
 
     def admin(self, key: str, default: Any = None) -> Any:
         v = self.store.get(key)
         return default if v is None else v
 
     def user(self, key: str, default: Any = None) -> Any:
-        return self.store.user_get(self.user_id, key, default)
+        v = self._user.get(key)
+        return default if v is None else v

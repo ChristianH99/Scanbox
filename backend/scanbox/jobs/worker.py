@@ -221,7 +221,13 @@ def recover_on_startup(ctx) -> tuple[dict[str, int], set[int]]:  # noqa: ANN001
     return stats, recovering
 
 
-def _adopt_orphan_pages(ctx, s) -> int:  # noqa: ANN001
+def adopt_orphans_for(ctx, doc_id: int) -> int:  # noqa: ANN001
+    """Adopt page files of one document that are on disk but not in the DB (immediately, not only at restart)."""
+    with session_scope() as s:
+        return _adopt_orphan_pages(ctx, s, only=doc_id)
+
+
+def _adopt_orphan_pages(ctx, s, only: int | None = None) -> int:  # noqa: ANN001
     """A page file written to disk but not yet in the DB (crash in between) is adopted, never lost."""
     from ..storage import sha256_file
 
@@ -231,7 +237,7 @@ def _adopt_orphan_pages(ctx, s) -> int:  # noqa: ANN001
     known = set(s.scalars(select(Page.raw_path)).all())
     adopted = 0
     for d in raw_dir.iterdir():
-        if not d.is_dir() or not d.name.isdigit():
+        if not d.is_dir() or not d.name.isdigit() or (only is not None and int(d.name) != only):
             continue
         doc = s.get(Document, int(d.name))
         if doc is None or doc.status in st.TERMINAL:

@@ -55,9 +55,10 @@ _DUMMY_HASH = _ph.hash("scanbox-dummy-password")
 class LoginRateLimiter:
     """Sliding-window limiter: N failures per (ip, username) and per ip."""
 
-    def __init__(self, per_user: int = 5, per_ip: int = 20, window_s: float = 900) -> None:
+    def __init__(self, per_user: int = 5, per_ip: int = 20, per_name: int = 20, window_s: float = 900) -> None:
         self.per_user = per_user
         self.per_ip = per_ip
+        self.per_name = per_name  # across all IPs – defence in depth against forged client IPs
         self.window = window_s
         self._fails: dict[str, deque[float]] = defaultdict(deque)
 
@@ -72,7 +73,8 @@ class LoginRateLimiter:
 
     def retry_after(self, ip: str, username: str) -> float:
         now = time.monotonic()
-        for key, limit in ((f"u:{ip}:{username.lower()}", self.per_user), (f"i:{ip}", self.per_ip)):
+        for key, limit in ((f"u:{ip}:{username.lower()}", self.per_user), (f"i:{ip}", self.per_ip),
+                           (f"n:{username.lower()}", self.per_name)):
             q = self._prune(key, now)
             if len(q) >= limit:
                 return max(1.0, q[0] + self.window - now)
@@ -82,6 +84,7 @@ class LoginRateLimiter:
         now = time.monotonic()
         self._fails[f"u:{ip}:{username.lower()}"].append(now)
         self._fails[f"i:{ip}"].append(now)
+        self._fails[f"n:{username.lower()}"].append(now)
 
     def success(self, ip: str, username: str) -> None:
         self._fails.pop(f"u:{ip}:{username.lower()}", None)
@@ -103,6 +106,11 @@ def ensure_local_admin(username: str, password: str | None) -> None:
         return
     with session_scope() as s:
         u = s.scalar(select(User).where(User.username == username))
+        if u is not None and (u.sub is not None or not u.is_local):
+            # An SSO account already uses this name: never convert it into the local admin.
+            log.error("auth.local_admin_name_taken", username=username,
+                      hint="set SCANBOX_ADMIN_USERNAME to a name not used by SSO accounts")
+            return
         if u is None:
             s.add(User(username=username, display_name="Administrator", is_admin=True, is_local=True,
                        password_hash=hash_password(password)))

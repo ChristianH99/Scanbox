@@ -130,6 +130,13 @@ def create_app(
     async def _domain(_req: Request, e: DomainError) -> JSONResponse:
         return JSONResponse({"detail": {"code": e.code, "message": e.message}}, status_code=e.status)
 
+    from .jobs.states import InvalidTransition
+
+    @app.exception_handler(InvalidTransition)
+    async def _transition(_req: Request, e: InvalidTransition) -> JSONResponse:
+        return JSONResponse({"detail": {"code": "invalid_state",
+                                        "message": f"Aktion im Status '{e.src}' nicht möglich"}}, status_code=409)
+
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, e: RequestValidationError) -> JSONResponse:
         msg = "; ".join(f"{'.'.join(str(x) for x in err['loc'][1:])}: {err['msg']}" for err in e.errors()[:10])

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import re
@@ -404,9 +403,10 @@ def merge(doc_id: int, body: MergeIn, s: Session = Depends(get_session), ctx: Ap
 
 
 @router.post("/documents/{doc_id}/qr/detect", response_model=QrDetectOut, responses=ERR)
-async def qr_detect(doc_id: int, body: QrDetectIn, s: Session = Depends(get_session), ctx: AppContext = CtxDep,
-                    p: Principal = PrincipalDep) -> QrDetectOut:
+def qr_detect(doc_id: int, body: QrDetectIn, s: Session = Depends(get_session), ctx: AppContext = CtxDep,
+              p: Principal = PrincipalDep) -> QrDetectOut:
     """Run QR detection on one page (default: first) with the profile zone or a zone being edited."""
+    # Sync handler (threadpool): no DB transaction is ever opened on the event loop.
     doc = get_visible_document(s, doc_id, p)
     pages = [pg for pg in doc.pages if not pg.deleted]
     page = next((pg for pg in pages if pg.id == body.page_id), pages[0] if pages else None)
@@ -417,20 +417,22 @@ async def qr_detect(doc_id: int, body: QrDetectIn, s: Session = Depends(get_sess
     raw_path = ctx.storage.abs(page.raw_path)
     edits = PageEdits.model_validate(page.edits or {})
     analysis = dict(page.analysis or {})
+    page_id = page.id
     s.commit()  # don't hold the DB lock during image work
+    from ..processing.render import orient_and_straighten
 
-    def work():  # noqa: ANN202
-        from ..processing.render import orient_and_straighten
-
+    try:
         img = ops.load(str(raw_path))
-        oriented, _r, _a, upd = orient_and_straighten(img, edits, profile, analysis)
-        return detect_qr(oriented, zone), upd
-
-    hits, upd = await asyncio.to_thread(work)
+    except (OSError, ValueError) as e:
+        raise HTTPException(410, detail={"code": "raw_missing", "message": "Originalseite fehlt"}) from e
+    oriented, _r, _a, upd = orient_and_straighten(img, edits, profile, analysis)
+    hits = detect_qr(oriented, zone)
     if upd:
-        page.analysis = {**analysis, **upd}
+        pg = s.get(Page, page_id)
+        if pg:
+            pg.analysis = {**(pg.analysis or {}), **upd}
     sel = select_hit(hits, profile.qr) if hits else None
-    return QrDetectOut(page_id=page.id, zone=zone, hits=[h.to_dict() for h in hits], selected=sel.value if sel else None)
+    return QrDetectOut(page_id=page_id, zone=zone, hits=[h.to_dict() for h in hits], selected=sel.value if sel else None)
 
 
 # ------------------------------------------------------------------ pages
@@ -484,33 +486,30 @@ def _render_cached(ctx: AppContext, page: Page, doc: Document, variant: str, siz
 
 
 @router.get("/pages/{page_id}/image", responses={200: {"content": {"image/jpeg": {}}}, **ERR})
-async def page_image(page_id: str, variant: Literal["raw", "processed"] = "processed",
-                     size: Literal["thumb", "preview", "full"] = "preview", s: Session = Depends(get_session),
-                     ctx: AppContext = CtxDep, p: Principal = PrincipalDep) -> FileResponse:
+def page_image(page_id: str, variant: Literal["raw", "processed"] = "processed",
+               size: Literal["thumb", "preview", "full"] = "preview", s: Session = Depends(get_session),
+               ctx: AppContext = CtxDep, p: Principal = PrincipalDep) -> FileResponse:
     page, doc = get_visible_page(s, page_id, p)
     if doc.raw_expired:
         raise HTTPException(410, detail={"code": "raw_expired", "message": "Original abgelaufen"})
     s.expunge(page)
     s.expunge(doc)
-    s.commit()
-    path, upd = await asyncio.to_thread(_render_cached, ctx, page, doc, variant, size, None)
+    s.commit()  # release the lock before rendering
+    try:
+        path, upd = _render_cached(ctx, page, doc, variant, size, None)
+    except (OSError, ValueError) as e:
+        raise HTTPException(410, detail={"code": "raw_missing", "message": "Originalseite fehlt"}) from e
     if upd:
-        from ..db import run_db, session_scope
-
-        def _save() -> None:
-            with session_scope() as s2:
-                pg = s2.get(Page, page_id)
-                if pg:
-                    pg.analysis = {**(pg.analysis or {}), **upd}
-
-        await run_db(_save)
+        pg = s.get(Page, page_id)
+        if pg:
+            pg.analysis = {**(pg.analysis or {}), **upd}
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
 
 
 @router.post("/pages/{page_id}/preview", responses={200: {"content": {"image/jpeg": {}}}, **ERR})
-async def page_preview(page_id: str, edits: PageEdits, size: Literal["thumb", "preview"] = "preview",
-                       s: Session = Depends(get_session), ctx: AppContext = CtxDep,
-                       p: Principal = PrincipalDep) -> FileResponse:
+def page_preview(page_id: str, edits: PageEdits, size: Literal["thumb", "preview"] = "preview",
+                 s: Session = Depends(get_session), ctx: AppContext = CtxDep,
+                 p: Principal = PrincipalDep) -> FileResponse:
     """Render a page with unsaved edits (before/after preview in the editor)."""
     page, doc = get_visible_page(s, page_id, p)
     if doc.raw_expired:
@@ -518,7 +517,10 @@ async def page_preview(page_id: str, edits: PageEdits, size: Literal["thumb", "p
     s.expunge(page)
     s.expunge(doc)
     s.commit()
-    path, _ = await asyncio.to_thread(_render_cached, ctx, page, doc, "processed", size, edits)
+    try:
+        path, _ = _render_cached(ctx, page, doc, "processed", size, edits)
+    except (OSError, ValueError) as e:
+        raise HTTPException(410, detail={"code": "raw_missing", "message": "Originalseite fehlt"}) from e
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 

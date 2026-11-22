@@ -85,6 +85,7 @@ async def run_ocrmypdf(
     optimize: int,
     jobs: int,
     jpeg_quality: int | None = None,
+    clean: bool = False,
     timeout: float = 1800.0,
 ) -> OcrResult:
     """Run OCRmyPDF as a niced subprocess. ``do_ocr=False`` keeps OCRmyPDF for PDF/A + optimise only."""
@@ -106,10 +107,11 @@ async def run_ocrmypdf(
     ]
     if jpeg_quality and optimize >= 1:
         args += ["--jpeg-quality", str(jpeg_quality)]
+    if clean and tool_available("unpaper"):
+        args += ["--clean-final"]
     if not do_ocr:
         args += ["--tesseract-timeout", "0"]
-    else:
-        args += ["--rotate-pages-threshold", "100"]  # we already oriented pages; avoid surprises
+    # No --rotate-pages: pages are already oriented by our pipeline (OSD + user edits).
     args += [str(src_pdf), str(out_pdf)]
     proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:

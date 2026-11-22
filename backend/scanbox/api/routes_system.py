@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .. import __version__
 from ..context import AppContext
-from ..db import check_writable
+from ..db import check_writable, run_db
 from ..security.auth import Principal
 from .deps import CtxDep, PrincipalDep
 
@@ -43,12 +43,24 @@ async def events(request: Request, ctx: AppContext = CtxDep, p: Principal = Prin
                     ev = await asyncio.wait_for(sub.queue.get(), timeout=HEARTBEAT_S)
                     yield ev.encode()
                 except TimeoutError:
+                    # Re-check the account on every heartbeat: disabled/demoted users lose the stream.
+                    if not await run_db(_still_allowed, p.id, p.is_admin):
+                        break
                     yield "event: heartbeat\ndata: {}\n\n"
         finally:
             ctx.bus.unsubscribe(sub)
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _still_allowed(user_id: int, was_admin: bool) -> bool:
+    from ..db import session_scope
+    from ..models import User
+
+    with session_scope() as s:
+        u = s.get(User, user_id)
+        return u is not None and not u.disabled and (u.is_admin or not was_admin)
 
 
 @router.get("/healthz", include_in_schema=False)

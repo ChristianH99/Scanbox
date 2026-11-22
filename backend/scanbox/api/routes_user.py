@@ -88,7 +88,10 @@ def update_contact(contact_id: int, body: ContactIn, s: Session = Depends(get_se
     c = s.get(Contact, contact_id)
     if c is None or c.user_id != p.id:
         raise HTTPException(404, detail={"code": "not_found", "message": "Kontakt nicht gefunden"})
-    c.name, c.email, c.is_default = body.name.strip(), body.email.strip().lower(), body.is_default
+    email = body.email.strip().lower()
+    if s.scalar(select(Contact.id).where(Contact.user_id == p.id, Contact.email == email, Contact.id != c.id)):
+        raise HTTPException(409, detail={"code": "exists", "message": "Kontakt existiert bereits"})
+    c.name, c.email, c.is_default = body.name.strip(), email, body.is_default
     s.flush()
     _sync_default_recipients(s, ctx, p.id)
     return c

@@ -22,7 +22,8 @@ log = structlog.get_logger(__name__)
 
 STATE_COOKIE = "scanbox_oidc"
 STATE_MAX_AGE = 600
-_jwt = JsonWebToken(["RS256", "RS384", "RS512", "ES256", "ES384", "PS256", "HS256"])
+# Asymmetric algorithms only (no HS256 → no algorithm-confusion with the public JWKS).
+_jwt = JsonWebToken(["RS256", "RS384", "RS512", "ES256", "ES384", "PS256"])
 
 
 class OidcError(Exception):
@@ -186,6 +187,9 @@ class OidcClient:
             except JoseError as e:
                 if force or "key" not in str(e).lower():
                     raise OidcError(f"invalid id_token: {e}") from e
+            except Exception as e:  # noqa: BLE001 - malformed tokens raise KeyError/ValueError in authlib
+                if force:
+                    raise OidcError(f"invalid id_token: {type(e).__name__}") from e
         raise OidcError("invalid id_token")
 
 

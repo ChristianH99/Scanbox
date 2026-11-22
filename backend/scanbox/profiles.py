@@ -101,6 +101,7 @@ class ProcessingOptions(Model):
     bw_threshold: int | None = Field(None, ge=0, le=255)  # None → Otsu
     denoise: bool = False
     sharpen: bool = False
+    unpaper_clean: bool = False  # unpaper cleaning via OCRmyPDF --clean-final (needs OCR/PDF output)
     brightness: float = Field(0.0, ge=-1, le=1)
     contrast: float = Field(0.0, ge=-1, le=1)
     split: SplitOptions = SplitOptions()

@@ -338,6 +338,7 @@ class Processor:
                     image_pdf, final, languages=langs, pdfa=fmt == "pdfa", do_ocr=ocr_wanted,
                     optimize=OPTIMIZE[profile.output.compression], jobs=jobs,
                     jpeg_quality=JPEG_Q[profile.output.compression],
+                    clean=profile.processing.unpaper_clean,
                 )
                 res.ocr_text = r.text
             else:

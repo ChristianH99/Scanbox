@@ -165,8 +165,8 @@ def claim(s: Session, doc_id: int, user: User) -> Document:
 
 
 def discard(s: Session, ctx, doc: Document) -> None:  # noqa: ANN001
-    if doc.status in (st.SCANNING,):
-        raise DomainError("invalid_state", "Scan läuft noch", 409)
+    if st.DISCARDED not in st.TRANSITIONS.get(doc.status, set()):
+        raise DomainError("invalid_state", f"Verwerfen nicht möglich im Status {doc.status}", 409)
     cancel_for_document(s, doc.id)
     st.transition(s, doc, st.DISCARDED, code="discarded")
     delete_document_files(s, ctx, doc)
@@ -269,6 +269,8 @@ def move_pages(s: Session, ctx, src: Document, target: Document, page_ids: list[
     ensure_editable(target)
     if src.owner_id != target.owner_id:
         raise DomainError("forbidden", "Nicht erlaubt", 403)
+    if src.raw_expired:
+        raise DomainError("raw_expired", "Originalseiten des Quelldokuments sind abgelaufen", 409)
     maxpos = s.scalar(select(func.max(Page.position)).where(Page.document_id == target.id)) or 0
     for i, pid in enumerate(page_ids, start=1):
         p = s.get(Page, pid)
@@ -301,6 +303,10 @@ def move_pages(s: Session, ctx, src: Document, target: Document, page_ids: list[
 
 
 def merge_documents(s: Session, ctx, target: Document, sources: list[Document]) -> None:  # noqa: ANN001
+    ensure_editable(target)
+    for src in sources:
+        if src.id != target.id:
+            ensure_editable(src)
     for src in sources:
         if src.id == target.id:
             continue

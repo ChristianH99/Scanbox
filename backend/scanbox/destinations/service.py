@@ -5,6 +5,7 @@ Also sends webhooks for API-triggered scans.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from datetime import datetime
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 import httpx
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from ..db import run_db, session_scope, utcnow
 from ..jobs import states as st
@@ -46,10 +48,11 @@ def get_destination(type_: str):  # noqa: ANN201
     return d
 
 
-def make_env(ctx, user_id: int, extras: dict[str, Any] | None = None) -> DeliveryEnv:  # noqa: ANN001
+def make_env(ctx, user_id: int, extras: dict[str, Any] | None = None, *,  # noqa: ANN001
+             user_values: dict[str, Any]) -> DeliveryEnv:
     roots = ctx.settings.get("output.roots") or {}
     return DeliveryEnv(
-        settings=UserSettingsAccessor(ctx.settings, user_id),
+        settings=UserSettingsAccessor(ctx.settings, user_id, user_values),
         tmp_dir=ctx.config.tmp_dir,
         http_client_factory=ctx.http_client_factory,
         extras={"output_roots": roots, **(extras or {})},
@@ -143,7 +146,8 @@ class DeliveryRunner:
                                      final=True)
                 return None
             self._publish(dl, doc)
-            return dl.id, user.id, doc.id, previous, job, dest, cfg
+            user_values = self.ctx.settings.user_all(user.id, s)
+            return dl.id, user.id, doc.id, previous, job, dest, cfg, user_values
 
     def _fail(self, task_id: int, delivery_id: int, doc_id: int, e: DeliveryError, *, final: bool | None) -> None:
         with session_scope() as s:
@@ -167,12 +171,13 @@ class DeliveryRunner:
         begun = await run_db(self._begin, task)
         if begun is None:
             return True
-        delivery_id, user_id, doc_id, previous, job, dest, cfg = begun
+        delivery_id, user_id, doc_id, previous, job, dest, cfg, user_values = begun
 
         async def progress(data: dict[str, Any]) -> None:
             await run_db(self._save_progress, delivery_id, data)
 
-        env = make_env(self.ctx, user_id, {"progress": progress, "previous_result": previous})
+        env = make_env(self.ctx, user_id, {"progress": progress, "previous_result": previous},
+                       user_values=user_values)
         structlog.contextvars.bind_contextvars(document_id=doc_id, delivery_id=delivery_id)
         try:
             if recovering:
@@ -190,6 +195,11 @@ class DeliveryRunner:
         except DeliveryError as e:
             await run_db(self._fail, task.id, delivery_id, doc_id, e, final=None)
             return not e.retryable
+        except OperationalError as e:  # e.g. database briefly locked → transient, retry
+            log.warning("delivery.db_error", error=str(e))
+            await run_db(self._fail, task.id, delivery_id, doc_id,
+                         DeliveryError("db_busy", f"Datenbank belegt: {e}", retryable=True), final=None)
+            return False
         except Exception as e:  # noqa: BLE001 - plugin bug must not kill the worker
             log.exception("delivery.crash")
             await run_db(self._fail, task.id, delivery_id, doc_id,
@@ -282,6 +292,9 @@ async def send_webhook(ctx, task: Task) -> bool:  # noqa: ANN001
     if loaded is None:
         return True
     url, payload = loaded
+    if not await asyncio.to_thread(webhook_target_allowed, url):
+        log.warning("webhook.blocked", url=url)
+        return True  # permanent: never retry a forbidden target
     try:
         async with ctx.http_client_factory(timeout=httpx.Timeout(15.0)) as client:
             resp = await client.post(url, json=payload, headers={"User-Agent": "Scanbox/1.0"})
@@ -292,6 +305,26 @@ async def send_webhook(ctx, task: Task) -> bool:  # noqa: ANN001
     except httpx.HTTPError as e:
         log.warning("webhook.failed", error=str(e))
         return False
+
+
+def webhook_target_allowed(url: str) -> bool:
+    """LAN targets (e.g. Home Assistant) are fine; loopback/link-local/unspecified are not (SSRF)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    p = urlparse(url)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(p.hostname, p.port or (443 if p.scheme == "https" else 80))
+    except OSError:
+        return True  # unresolvable now → let the request fail and retry
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast:
+            return False
+    return True
 
 
 async def call_maybe_async(fn, *a):  # noqa: ANN001, ANN201

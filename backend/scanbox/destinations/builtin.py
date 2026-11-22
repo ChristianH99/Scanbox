@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import glob
+import threading
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -12,6 +14,8 @@ from ..filenames import sanitize_subpath, unique_path
 from ..storage import UnsafePath, exclusive_atomic_copy, safe_join, sha256_file
 from .base import DeliveryEnv, DeliveryError, DeliveryJob, DeliveryResult, RecoverAction
 from .templating import render_template
+
+_WRITE_LOCK = threading.Lock()
 
 
 class DownloadDestination:
@@ -94,8 +98,12 @@ class FolderDestination:
                     raise DeliveryError("folder_conflict", "Kein freier Dateiname gefunden")
                 written.append({"path": str(path), "sha256": a.sha256, "artifact": a.filename})
 
+        def _locked_write() -> None:
+            with _WRITE_LOCK:  # serialise "find free name + write" across delivery lanes (SMB fallback)
+                _write()
+
         try:
-            await asyncio.to_thread(_write)
+            await asyncio.to_thread(_locked_write)
         except PermissionError as e:
             raise DeliveryError("folder_permission", f"Keine Schreibrechte: {e}") from e
         except OSError as e:
@@ -118,7 +126,7 @@ class FolderDestination:
                 if a.kind == "pdf_image":
                     continue
                 stem, _, ext = a.filename.rpartition(".")
-                candidates = [target_dir / a.filename, *target_dir.glob(f"{stem} (*).{ext}")]
+                candidates = [target_dir / a.filename, *target_dir.glob(f"{glob.escape(stem)} (*).{glob.escape(ext)}")]
                 if not any(c.is_file() and c.stat().st_size == a.size and sha256_file(c) == a.sha256 for c in candidates):
                     return False
             return True

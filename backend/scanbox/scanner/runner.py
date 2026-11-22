@@ -217,6 +217,20 @@ class ScanRunner:
                     await self.scanner.client().cancel_job(job_uri)
                 code = e.code
                 return BatchOutcome(received, code, USER_MESSAGES.get(code, e.message) + f" ({e.message})")
+            except Exception as e:  # noqa: BLE001 - DB/disk errors: stop the scanner job, keep pages
+                log.exception("scan.internal_error")
+                if job_uri:
+                    try:
+                        await self.scanner.client().cancel_job(job_uri)
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    from ..jobs.worker import adopt_orphans_for
+
+                    await run_db(adopt_orphans_for, self.ctx, doc_id)
+                except Exception:  # noqa: BLE001
+                    log.exception("scan.adopt_failed")
+                return BatchOutcome(received, "internal_error", f"Interner Fehler beim Speichern: {e}"[:500])
             except asyncio.CancelledError:
                 if job_uri:
                     try:

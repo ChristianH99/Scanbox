@@ -25,34 +25,54 @@ RENDER_CACHE_MAX = 500 * 1024 * 1024
 
 
 def run_retention(ctx, *, force_all: bool = False) -> dict[str, int]:  # noqa: ANN001
-    """Expire cached files. ``force_all`` = admin 'Clear cache now' (keeps unfinished work!)."""
+    """Expire cached files. ``force_all`` = admin 'Clear cache now'.
+
+    Never touched by force_all: unfinished work and unclaimed inbox items (they expire only when
+    their own ``inbox_expires_at`` has passed). Each document is handled in its own short
+    transaction so the write lock is never held for long.
+    """
     raw_days = int(ctx.settings.get("retention.raw_days") or 30)
     proc_days = int(ctx.settings.get("retention.processed_days") or 14)
     now = utcnow()
     stats = {"raw_expired": 0, "processed_expired": 0, "inbox_expired": 0, "render_cache_bytes": 0}
+    cutoff_p = now - timedelta(days=proc_days)
+    cutoff_r = now - timedelta(days=raw_days)
+    cutoff_unfinished = now - timedelta(days=2 * raw_days)
+
     with session_scope() as s:
-        # Unclaimed inbox items
-        for doc in s.scalars(select(Document).where(
+        inbox_ids = list(s.scalars(select(Document.id).where(
             Document.owner_id.is_(None), Document.origin == "walkup",
             Document.status.not_in((st.DISCARDED, st.EXPIRED, st.SCANNING, st.QUEUED)),
-        )):
-            if force_all or (doc.inbox_expires_at and doc.inbox_expires_at <= now):
-                delete_document_files(s, ctx, doc)
-                st.transition(s, doc, st.EXPIRED, code="inbox.expired", message="Nicht übernommen – abgelaufen")
-                stats["inbox_expired"] += 1
-        # Processed outputs
-        cutoff_p = now - timedelta(days=proc_days)
-        q = select(Document).where(Document.processed_expired.is_(False), Document.status.not_in(UNFINISHED))
-        for doc in s.scalars(q):
+            Document.inbox_expires_at.is_not(None), Document.inbox_expires_at <= now,
+        )))
+        proc_ids = list(s.scalars(select(Document.id).where(
+            Document.processed_expired.is_(False), Document.status.not_in(UNFINISHED))))
+        raw_ids = list(s.scalars(select(Document.id).where(
+            Document.raw_expired.is_(False), Document.owner_id.is_not(None),
+            Document.status.not_in((st.QUEUED, st.SCANNING, st.PROCESSING, st.DELIVERING)))))
+
+    for doc_id in inbox_ids:
+        with session_scope() as s:
+            doc = s.get(Document, doc_id)
+            if doc is None or doc.owner_id is not None or doc.status in (st.DISCARDED, st.EXPIRED):
+                continue  # claimed in the meantime
+            delete_document_files(s, ctx, doc)
+            st.transition(s, doc, st.EXPIRED, code="inbox.expired", message="Nicht übernommen – abgelaufen")
+            stats["inbox_expired"] += 1
+    for doc_id in proc_ids:
+        with session_scope() as s:
+            doc = s.get(Document, doc_id)
+            if doc is None or doc.processed_expired or doc.status in UNFINISHED:
+                continue
             ts = doc.finished_at or doc.updated_at or doc.created_at
             if force_all or ts <= cutoff_p:
                 delete_document_files(s, ctx, doc, raw=False, processed=True)
                 stats["processed_expired"] += 1
-        # Raw pages: finished docs after raw_days; unfinished docs only after 2× (never lose work silently)
-        cutoff_r = now - timedelta(days=raw_days)
-        cutoff_unfinished = now - timedelta(days=2 * raw_days)
-        for doc in s.scalars(select(Document).where(Document.raw_expired.is_(False), Document.owner_id.is_not(None))):
-            if doc.status in (st.QUEUED, st.SCANNING, st.PROCESSING, st.DELIVERING):
+    for doc_id in raw_ids:
+        with session_scope() as s:
+            doc = s.get(Document, doc_id)
+            if doc is None or doc.raw_expired or doc.owner_id is None or doc.status in (
+                    st.QUEUED, st.SCANNING, st.PROCESSING, st.DELIVERING):
                 continue
             unfinished = doc.status in UNFINISHED
             limit = cutoff_unfinished if unfinished else cutoff_r

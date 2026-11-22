@@ -138,7 +138,9 @@ def _upsert_oidc_user(ctx: AppContext, request: Request, resp: RedirectResponse,
         username = str(claims.get("preferred_username") or claims.get("username") or claims.get("email") or sub)[:150]
         if user is None:
             base, n = username, 1
-            while s.scalar(select(User.id).where(User.username == username)) is not None:
+            reserved = {ctx.config.admin_username.lower()}
+            while username.lower() in reserved or \
+                    s.scalar(select(User.id).where(User.username == username)) is not None:
                 n += 1
                 username = f"{base}-{n}"[:150]
             user = User(sub=sub, username=username)

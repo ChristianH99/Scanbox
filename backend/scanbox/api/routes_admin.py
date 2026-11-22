@@ -55,7 +55,7 @@ async def patch_admin_settings(body: AdminSettingsIn, ctx: AppContext = CtxDep) 
         if d.secret and value in (None, "") and key not in body.clear_secrets:
             continue  # keep existing secret
         if key == "output.roots":
-            err = _validate_roots(value)
+            err = _validate_roots(value, ctx.config.data_dir)
             if err:
                 errors[key] = err
                 continue
@@ -98,7 +98,7 @@ async def _refresh_scanner(ctx: AppContext) -> None:
     await ctx.scanner.poll_status()  # type: ignore[union-attr]
 
 
-def _validate_roots(value: Any) -> str | None:
+def _validate_roots(value: Any, data_dir: Path) -> str | None:
     if not isinstance(value, dict):
         return "expected an object name → absolute path"
     for name, path in value.items():
@@ -107,7 +107,11 @@ def _validate_roots(value: Any) -> str | None:
         p = Path(str(path))
         if not p.is_absolute():
             return f"{name}: path must be absolute"
-        if str(p) in ("/", "/data") or str(p).startswith(("/proc", "/sys", "/etc", "/dev")):
+        rp = p.resolve()
+        data = data_dir.resolve()
+        forbidden = [Path(x) for x in ("/proc", "/sys", "/etc", "/dev", "/usr", "/bin", "/app")]
+        if rp == Path(rp.anchor) or any(rp == f or rp.is_relative_to(f) for f in forbidden) or (
+                rp == data or rp.is_relative_to(data) or data.is_relative_to(rp)):
             return f"{name}: path not allowed"
         if not p.is_dir():
             return f"{name}: {p} does not exist in the container (mount it as a volume)"
@@ -149,12 +153,14 @@ async def get_usage(ctx: AppContext = CtxDep) -> UsageOut:
 
 @router.post("/clear-cache", response_model=ClearCacheOut)
 async def clear_cache(ctx: AppContext = CtxDep) -> ClearCacheOut:
-    """Delete cached raw + processed files of finished documents now. Unfinished work is kept."""
+    """Delete cached raw + processed files of finished documents now.
+
+    Unfinished work and unclaimed inbox items are kept."""
     return ClearCacheOut(**await asyncio.to_thread(run_retention, ctx, force_all=True))
 
 
 @router.get("/diagnostics", response_model=DiagnosticsOut)
-async def diagnostics(s: Session = Depends(get_session), ctx: AppContext = CtxDep) -> DiagnosticsOut:
+def diagnostics(s: Session = Depends(get_session), ctx: AppContext = CtxDep) -> DiagnosticsOut:
     rows = s.execute(select(Task.lane, Task.status, func.count(Task.id)).group_by(Task.lane, Task.status)).all()
     s.commit()
     queue: dict[str, dict[str, int]] = {}
@@ -167,7 +173,7 @@ async def diagnostics(s: Session = Depends(get_session), ctx: AppContext = CtxDe
         tools=tools_status(),
         queue=queue,
         workers_alive=bool(ctx.worker and ctx.worker.alive),
-        usage=UsageOut(**await asyncio.to_thread(usage, ctx)),
+        usage=UsageOut(**usage(ctx)),
         recent_errors=list(RECENT_ERRORS)[-50:][::-1],
         walkup=ctx.walkup.status.to_dict() if ctx.walkup else None,
     )
@@ -182,17 +188,19 @@ def download_logs(ctx: AppContext = CtxDep) -> FileResponse:
 
 
 # ------------------------------------------------------------------ tests
-def _env(ctx: AppContext, a: Principal):  # noqa: ANN202
+async def _env(ctx: AppContext, a: Principal):  # noqa: ANN202
+    from ..db import run_db
     from ..destinations.service import make_env
 
-    return make_env(ctx, a.id)
+    user_values = await run_db(ctx.settings.user_all, a.id)
+    return make_env(ctx, a.id, user_values=user_values)
 
 
 @router.post("/test/smtp", response_model=TestResultOut)
 async def test_smtp_ep(ctx: AppContext = CtxDep, a: Principal = Depends(require_admin)) -> TestResultOut:
     from ..destinations.email import test_smtp
 
-    ok, msg = await test_smtp(_env(ctx, a))
+    ok, msg = await test_smtp(await _env(ctx, a))
     return TestResultOut(ok=ok, message=msg)
 
 
@@ -202,7 +210,7 @@ async def test_mail(body: TestMailIn, ctx: AppContext = CtxDep, a: Principal = D
     from ..destinations.email import send_test_mail
 
     try:
-        await send_test_mail(_env(ctx, a), body.to)
+        await send_test_mail(await _env(ctx, a), body.to)
     except DeliveryError as e:
         return TestResultOut(ok=False, message=e.message)
     return TestResultOut(ok=True, message=f"Testmail an {body.to} gesendet")
@@ -213,7 +221,7 @@ async def test_paperless_ep(ctx: AppContext = CtxDep, a: Principal = Depends(req
     """Uses the calling admin's own Paperless token."""
     from ..destinations.paperless import test_paperless
 
-    ok, msg = await test_paperless(_env(ctx, a))
+    ok, msg = await test_paperless(await _env(ctx, a))
     return TestResultOut(ok=ok, message=msg)
 
 
