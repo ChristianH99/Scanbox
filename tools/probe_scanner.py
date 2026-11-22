@@ -263,9 +263,13 @@ class Probe:
             if r["status"] is not None:
                 ok.append(base)
             elif base.startswith("https") and r["error"] and "CERTIFICATE" in r["error"].upper():
-                self.findings.append(f"{base}: TLS certificate not trusted - rerun with --insecure to include HTTPS.")
+                self.findings.append(
+                    f"{base}: TLS certificate not trusted - rerun with --insecure to include HTTPS."
+                )
         if not ok:
-            self.findings.append("Scanner not reachable on :80, :8080 or :443. Check IP/hostname and that you are on the same LAN.")
+            self.findings.append(
+                "Scanner not reachable on :80, :8080 or :443. Check IP/hostname and that you are on the same LAN."
+            )
         return ok
 
     # ---- read-only sweep
@@ -333,7 +337,11 @@ class Probe:
             r = self.http.request("POST", base + "/eSCL/WalkupSubscriptions", body=body)
         else:
             body = ledm_destination(self.a.name, self.a.hostname, variant == "ledm_comp")
-            path = "/WalkupScanToComp/WalkupScanToCompDestinations" if variant == "ledm_comp" else "/WalkupScan/WalkupScanDestinations"
+            path = (
+                "/WalkupScanToComp/WalkupScanToCompDestinations"
+                if variant == "ledm_comp"
+                else "/WalkupScan/WalkupScanDestinations"
+            )
             r = self.http.request("POST", base + path, body=body)
         loc = next((v for k, v in r["headers"].items() if k.lower() == "location"), None)
         if r["status"] in (200, 201) and loc:
@@ -341,7 +349,9 @@ class Probe:
             self.created.append(d)
             self.log.say(f"  registered: {d['uri']} (HTTP {r['status']})")
             self.findings.append(f"Registration {variant}: HTTP {r['status']}, Location {loc}")
-            self.log.say("  >>> Check the scanner display now: does the destination appear? (note it for the developer)")
+            self.log.say(
+                "  >>> Check the scanner display now: does the destination appear? (note it for the developer)"
+            )
             self.list_after(variant, base)
             return d
         self.findings.append(f"Registration {variant} FAILED: HTTP {r['status']} {r['error'] or ''}")
@@ -372,16 +382,22 @@ class Probe:
         else:
             r = self.http.request("GET", f"{d['base']}{d['uri']}")
             alive = r["status"] == 200
-        self.findings.append(f"Idle test {seconds}s without polling: registration {'ALIVE' if alive else 'GONE'} (HTTP {r['status']})")
+        self.findings.append(
+            f"Idle test {seconds}s without polling: registration {'ALIVE' if alive else 'GONE'} (HTTP {r['status']})"
+        )
         self.list_after(d["variant"], d["base"])
 
     # ---- watch
 
     def watch(self, d: dict, seconds: int) -> None:
         self.log.say(f"\n== 4. Watching events for {seconds}s ==")
-        self.log.say("  NOW: on the scanner, choose the computer/destination "
-                     f"'{self.a.name}', pick a shortcut, change settings (resolution, duplex, colour) and press Start.")
-        self.log.say("  Please try: (a) select + cancel, (b) select + start simplex, (c) duplex/colour change. Ctrl+C to stop early.")
+        self.log.say(
+            "  NOW: on the scanner, choose the computer/destination "
+            f"'{self.a.name}', pick a shortcut, change settings (resolution, duplex, colour) and press Start."
+        )
+        self.log.say(
+            "  Please try: (a) select + cancel, (b) select + start simplex, (c) duplex/colour change. Ctrl+C to stop early."
+        )
         if d["variant"] == "escl":
             self._watch_escl(d, seconds)
         else:
@@ -402,14 +418,20 @@ class Probe:
                 settings = {}
                 if root is not None:
                     for ss in find_local(root, "ScanSettings"):
-                        settings = {local(c.tag): (c.text or "").strip() for c in ss.iter() if len(c) == 0 and c is not ss}
+                        settings = {
+                            local(c.tag): (c.text or "").strip()
+                            for c in ss.iter()
+                            if len(c) == 0 and c is not ss
+                        }
                 self.events_seen.append(f"{ev} shortcut={sc} settings={settings}")
                 self.log.say(f"  EVENT {ev} shortcut={sc} settings={settings}")
                 if ev == "ScanRequested" and self.a.scan_on_request:
                     self.scan_job(d, settings)
                 continue
             if st in (403, 404, 410):
-                self.findings.append(f"Event poll answered {st}: subscription lost during watch; re-registering")
+                self.findings.append(
+                    f"Event poll answered {st}: subscription lost during watch; re-registering"
+                )
                 self.log.say(f"  subscription lost (HTTP {st}) - re-registering")
                 new = self.register("escl", d["base"])
                 if not new:
@@ -435,7 +457,9 @@ class Probe:
         while (left := end - time.monotonic()) > 1:
             ds = int(min(600, max(10, left * 10)))
             hdr = {"If-None-Match": etag} if etag else {}
-            r = self.http.request("GET", f"{base}/EventMgmt/EventTable?timeout={ds}", headers=hdr, timeout=ds / 10 + 20)
+            r = self.http.request(
+                "GET", f"{base}/EventMgmt/EventTable?timeout={ds}", headers=hdr, timeout=ds / 10 + 20
+            )
             if r["status"] == 304:
                 continue
             if r["status"] != 200:
@@ -452,7 +476,10 @@ class Probe:
                     continue
                 seen.add(stamp)
                 cat = text_local(e, "UnqualifiedEventCategory")
-                payloads = [(text_local(p, "ResourceURI"), text_local(p, "ResourceType")) for p in find_local(e, "Payload")]
+                payloads = [
+                    (text_local(p, "ResourceURI"), text_local(p, "ResourceType"))
+                    for p in find_local(e, "Payload")
+                ]
                 self.log.say(f"  EVENT {cat} {stamp} {payloads}")
                 self.events_seen.append(f"{cat} {payloads}")
                 if cat != "ScanEvent":
@@ -493,7 +520,7 @@ class Probe:
   <scan:Duplex>{dup}</scan:Duplex>
   <scan:ColorMode>{color}</scan:ColorMode>
   <scan:XResolution>{res}</scan:XResolution>
-  <scan:YResolution>{settings.get('YResolution', res)}</scan:YResolution>
+  <scan:YResolution>{settings.get("YResolution", res)}</scan:YResolution>
   <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
   <scan:DocumentFormatExt>image/jpeg</scan:DocumentFormatExt>
 </scan:ScanSettings>""".encode()
@@ -511,7 +538,9 @@ class Probe:
                 total += len(pr["body"])
                 if self.a.save_dir:
                     os.makedirs(self.a.save_dir, exist_ok=True)
-                    with open(os.path.join(self.a.save_dir, f"page-{int(time.time())}-{pages}.jpg"), "wb") as fh:
+                    with open(
+                        os.path.join(self.a.save_dir, f"page-{int(time.time())}-{pages}.jpg"), "wb"
+                    ) as fh:
                         fh.write(pr["body"])
                 busy = 0
                 continue
@@ -522,7 +551,9 @@ class Probe:
             break
         self.http.request("GET", d["base"] + "/eSCL/ScannerStatus")
         self.findings.append(f"Scan job with ContextID: {pages} page(s), {total} bytes")
-        self.log.say(f"  scan job done: {pages} page(s), {total} bytes. Watch the display: does it show 'complete'?")
+        self.log.say(
+            f"  scan job done: {pages} page(s), {total} bytes. Watch the display: does it show 'complete'?"
+        )
 
     # ---- cleanup
 
@@ -549,10 +580,14 @@ class Probe:
                     names = [c for c in el if local(c.tag) == key]
                     if not names or (names[0].text or "").strip() != self.a.name:
                         continue
-                    uri = next((c.text for c in el if local(c.tag) in ("ResourceURI", "SubscriptionURI")), None)
+                    uri = next(
+                        (c.text for c in el if local(c.tag) in ("ResourceURI", "SubscriptionURI")), None
+                    )
                     if uri:
                         r2 = self.http.request("DELETE", base + path_of(uri))
-                        self.log.say(f"  removed leftover '{self.a.name}' {path_of(uri)}: HTTP {r2['status'] or r2['error']}")
+                        self.log.say(
+                            f"  removed leftover '{self.a.name}' {path_of(uri)}: HTTP {r2['status'] or r2['error']}"
+                        )
 
 
 def escl_subscription(name: str, shortcuts: list[str]) -> bytes:
@@ -567,8 +602,11 @@ def escl_subscription(name: str, shortcuts: list[str]) -> bytes:
 
 
 def ledm_destination(name: str, hostname: str, to_comp: bool) -> bytes:
-    ns, root, xsd = (WUS_NS, "WalkupScanToCompDestination", "WalkupScanToComp.xsd") if to_comp else (
-        WUSREST_NS, "WalkupScanDestination", "WalkupScanDestinations.xsd")
+    ns, root, xsd = (
+        (WUS_NS, "WalkupScanToCompDestination", "WalkupScanToComp.xsd")
+        if to_comp
+        else (WUSREST_NS, "WalkupScanDestination", "WalkupScanDestinations.xsd")
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         f'<{root} xmlns="{ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="{ns} {xsd}">\n'
@@ -600,19 +638,33 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Probe an HP scanner for walk-up (scan-to-computer) support.")
     p.add_argument("--scanner", required=True, help="http://<ip-or-host>[:port] (https://... also works)")
     p.add_argument("--out", default=None, help="log file (default probe-<timestamp>.log)")
-    p.add_argument("--insecure", action="store_true", help="accept the scanner's self-signed HTTPS certificate")
+    p.add_argument(
+        "--insecure", action="store_true", help="accept the scanner's self-signed HTTPS certificate"
+    )
     p.add_argument("--timeout", type=float, default=10.0, help="per-request timeout for normal calls (s)")
     p.add_argument("--register", action="store_true", help="create a test destination")
     p.add_argument("--name", default="Scanbox-Probe", help="test destination name (must contain 'probe')")
     p.add_argument("--hostname", default=socket.gethostname(), help="hostname sent in LEDM registrations")
     p.add_argument("--shortcut", action="append", default=None, help="eSCL shortcut label (repeatable)")
-    p.add_argument("--watch", type=int, default=0, metavar="N", help="poll events for N seconds (needs --register)")
-    p.add_argument("--idle-test", type=int, default=0, metavar="S",
-                   help="after registering, do NOT poll for S seconds, then check if the registration survived")
-    p.add_argument("--scan-on-request", action="store_true",
-                   help="on ScanRequested, run an eSCL scan job (pages are counted, not kept unless --save-dir)")
+    p.add_argument(
+        "--watch", type=int, default=0, metavar="N", help="poll events for N seconds (needs --register)"
+    )
+    p.add_argument(
+        "--idle-test",
+        type=int,
+        default=0,
+        metavar="S",
+        help="after registering, do NOT poll for S seconds, then check if the registration survived",
+    )
+    p.add_argument(
+        "--scan-on-request",
+        action="store_true",
+        help="on ScanRequested, run an eSCL scan job (pages are counted, not kept unless --save-dir)",
+    )
     p.add_argument("--save-dir", default=None, help="save pages from --scan-on-request here")
-    p.add_argument("--cleanup", action="store_true", help="remove destinations created by this tool when done")
+    p.add_argument(
+        "--cleanup", action="store_true", help="remove destinations created by this tool when done"
+    )
     p.add_argument("--redact", action="store_true", help="redact serial number / UUID / MAC in the log file")
     a = p.parse_args(argv)
     a.shortcut = a.shortcut or ["Document", "Photo"]
@@ -631,7 +683,9 @@ def main(argv=None) -> int:
             pr.sweep(bases)
             variant, base = pr.pick()
             if variant is None:
-                pr.findings.append("No walk-up registration endpoint found (eSCL WalkupSubscriptions / LEDM).")
+                pr.findings.append(
+                    "No walk-up registration endpoint found (eSCL WalkupSubscriptions / LEDM)."
+                )
             else:
                 pr.findings.append(f"Preferred walk-up variant: {variant} at {base}")
             if a.register and variant:
@@ -657,7 +711,11 @@ def main(argv=None) -> int:
 def summary(pr: Probe, log: Log, a) -> None:
     log.say("\n== Summary ==")
     for base, res in pr.results.items():
-        key = {k: v for k, v in res.items() if "Walkup" in k or "Capabilities" in k or "Discovery" in k or "EventTable" in k}
+        key = {
+            k: v
+            for k, v in res.items()
+            if "Walkup" in k or "Capabilities" in k or "Discovery" in k or "EventTable" in k
+        }
         log.say(f"  {base}: {key}")
     for f in pr.findings:
         log.say(f"  * {f}")
