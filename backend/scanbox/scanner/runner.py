@@ -47,6 +47,7 @@ USER_MESSAGES = {
     "insufficient_disk": "Zu wenig Speicherplatz / not enough disk space",
     "scanner_not_configured": "Kein Scanner konfiguriert / no scanner configured",
     "scan_rejected": "Scanner hat den Auftrag abgelehnt / scanner rejected the job",
+    "cancelled": "Scan abgebrochen / scan cancelled",
     "connection_lost": "Verbindung während einer Seite abgebrochen – evtl. fehlt ein Blatt, bitte prüfen "
     "/ connection lost mid-page – a sheet may be missing",
 }
@@ -117,6 +118,9 @@ def _image_meta(data: bytes) -> tuple[int, int, int]:
 class ScanRunner:
     def __init__(self, ctx) -> None:  # noqa: ANN001
         self.ctx = ctx
+        # Documents whose running scan the user asked to stop (checked between pages).
+        self.cancel_requests: set[int] = set()
+        self.current_job: tuple[int, str] | None = None  # (document_id, eSCL job URI)
 
     @property
     def scanner(self):  # noqa: ANN201
@@ -193,15 +197,24 @@ class ScanRunner:
                              settings={k: v for k, v in settings.__dict__.items() if v is not None})
                 job_uri = await self._create_job_with_busy_retry(client, settings)
                 await run_db(self._update_batch, batch_id, escl_job_uri=job_uri)
+                self.current_job = (doc_id, job_uri)
                 log.info("scan.job_created", job_uri=job_uri)
                 duplex = profile.source == "adf_duplex"
-                while True:
-                    page = await client.next_document(job_uri)
+                while doc_id not in self.cancel_requests:
+                    try:
+                        page = await client.next_document(job_uri)
+                    except EsclError:
+                        if doc_id in self.cancel_requests:
+                            break  # the job was deleted on our request
+                        raise
                     if page is None:
                         break
                     await run_db(self._store_page, doc_id, batch_id, page.content, page.content_type, duplex,
                                  received)
                     received += 1
+                if doc_id in self.cancel_requests:
+                    await client.cancel_job(job_uri)
+                    return BatchOutcome(received, "cancelled", USER_MESSAGES["cancelled"])
                 # The job ended – find out whether it ended well.
                 await self._check_job_end(client, job_uri, received)
                 return BatchOutcome(received)
@@ -239,6 +252,8 @@ class ScanRunner:
                         pass
                 raise
             finally:
+                self.current_job = None
+                self.cancel_requests.discard(doc_id)
                 self.scanner.set_active(None)
 
     async def _create_job_with_busy_retry(self, client, settings: ScanSettings) -> str:  # noqa: ANN001
@@ -353,6 +368,17 @@ class ScanRunner:
                 st.transition(s, doc, st.STORED, code="scan.batch_done", message=f"{o.pages} Seite(n)")
                 if doc.auto_finish:
                     start_processing(s, doc)
+                return
+            if o.error_code == "cancelled":
+                batch.status = "cancelled"
+                total = s.scalar(select(func.count(Page.id)).where(Page.document_id == doc_id,
+                                                                   Page.deleted.is_(False))) or 0
+                if total:
+                    st.transition(s, doc, st.STORED, code="scan.cancelled",
+                                  message=f"Scan abgebrochen – {total} Seite(n) vorhanden")
+                else:
+                    st.transition(s, doc, st.FAILED, code="scan.cancelled", message="Scan abgebrochen",
+                                  error_code="cancelled")
                 return
             batch.status = "failed"
             batch.error_code = o.error_code

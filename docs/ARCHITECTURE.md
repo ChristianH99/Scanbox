@@ -131,7 +131,9 @@ All timestamps are UTC. Files live under `SCANBOX_DATA_DIR` (default `/data`):
 | `failed` | Nothing usable (e.g. scan failed before the first page). It can still be retried (rescanned). |
 | `discarded` / `expired` | Terminal; files removed, metadata kept. |
 
-Transitions are validated by `jobs/states.py::transition()`. Each transition writes a `job_events` row and publishes an SSE event.
+A queued or running scan can be stopped with `POST /api/documents/{id}/cancel`: the eSCL job is deleted, and pages already received are kept (→ `stored`, or `discarded` if there were none).
+
+Transitions are validated by `jobs/states.py::transition()`. An invalid transition requested via the API is answered with `409 invalid_state`. Each transition writes a `job_events` row and publishes an SSE event.
 
 ### Startup recovery
 
@@ -215,7 +217,7 @@ Then, per document:
 12. **Title/date suggestion** from OCR text (simple heuristics: first strong line, first date). Always editable.
 13. **Filename** from template (§9).
 
-The editor preview uses the same step functions (`GET /api/pages/{id}/render?w=…&edits=…`), so what you see is what gets produced.
+The editor preview uses the same step functions (`GET /api/pages/{id}/image?variant=processed` for saved edits, `POST /api/pages/{id}/preview` with unsaved edits), so what you see is what gets produced. Renders are cached under a hash of raw page + edits + profile processing, which also serves as the HTTP `ETag`.
 
 ## 8. QR codes
 
@@ -259,6 +261,8 @@ Errors are raised as `DeliveryError(code, message, retryable)`. Retryable errors
 * **Local admin**: username/password from `SCANBOX_ADMIN_USERNAME` / `SCANBOX_ADMIN_PASSWORD(_FILE)`, hashed with argon2 on first start. Login is rate-limited: 5 failures per 15 min per IP+username, and 20 per IP.
 * **Sessions**: random 256-bit id in cookie `scanbox_session` (HttpOnly, Secure, SameSite=Lax, Path=/). Only the SHA-256 hash is stored. Idle timeout 7 days, absolute 30 days.
 * **CSRF**: double submit. Cookie `scanbox_csrf` (readable by JS) must equal header `X-CSRF-Token` for every unsafe method with cookie auth. Bearer-token requests are exempt (no ambient credentials).
+* **Login errors** are passed to the SPA as `/login?error=<code>`: `sso_unavailable` (discovery failed), `sso_disabled`, `sso_failed` (state/nonce/token validation), `sso_<provider error>` (e.g. `sso_access_denied`) and `account_disabled`.
+* **Proxy headers** are trusted only from `SCANBOX_FORWARDED_ALLOW_IPS` (default localhost + Docker bridge networks).
 * **API tokens**: `sbx_<prefix>_<secret>`, SHA-256 stored, scoped to the user. Used by Home Assistant/scripts.
 * **Webhooks**: an API scan can set `webhook_url`. On `done` / `needs_attention` / `failed`, Scanbox POSTs a JSON summary (+ download URL). Retries use the deliver lane.
 * Security headers: CSP (self), `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`.

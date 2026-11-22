@@ -139,7 +139,8 @@ class ProfileOut(ORM):
     id: int
     name: str
     description: str
-    builtin: bool
+    builtin: bool = Field(..., description="Seeded default profile: cannot be deleted")
+    shared: bool = Field(..., description="Visible to all users (built-in or admin-shared); only admins edit")
     owner_id: int | None
     settings: ProfileSettings
     problems: list[str] = []
@@ -235,6 +236,7 @@ class DocumentSummary(ORM):
     finished_at: datetime | None
     inbox_expires_at: datetime | None
     destinations: list[str] = []
+    first_page_id: str | None = Field(None, description="For list thumbnails (null when originals expired)")
 
 
 class DocumentDetail(DocumentSummary):
@@ -314,10 +316,20 @@ class QrDetectIn(BaseModel):
     page_id: str | None = None
 
 
+class QrHitOut(BaseModel):
+    value: str
+    x: float = Field(..., description="Page-relative box (0..1) on the oriented, uncropped page")
+    y: float
+    w: float
+    h: float
+    page_id: str | None = None
+    page_index: int | None = None
+
+
 class QrDetectOut(BaseModel):
     page_id: str
     zone: Zone
-    hits: list[dict[str, Any]]
+    hits: list[QrHitOut]
     selected: str | None
 
 

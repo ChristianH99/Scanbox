@@ -263,3 +263,58 @@ async def test_image_outputs(harness, fmt) -> None:  # noqa: ANN001
     assert r.status_code == 200
     expected = {"jpeg": "application/zip", "png": "application/zip", "tiff": "image/tiff"}[fmt]
     assert r.headers["content-type"] == expected
+
+
+async def test_cancel_running_scan_keeps_pages(harness) -> None:  # noqa: ANN001
+    import asyncio
+
+    c = await harness.login()
+    harness.sim_state.load("long_stack")
+    harness.sim_state.set_faults(slow_ms=300, sticky=True)
+    pid = await builtin_profile_id(c)
+    doc = await start(c, pid, {"source": "adf_simplex"})
+    for _ in range(200):
+        d = (await c.get(f"/api/documents/{doc['id']}")).json()
+        if d["page_count"] >= 2:
+            break
+        await asyncio.sleep(0.05)
+    r = await c.post(f"/api/documents/{doc['id']}/cancel")
+    assert r.status_code == 200, r.text
+    d = await harness.wait_status(c, doc["id"], "stored")
+    assert 2 <= d["page_count"] < 30
+    assert d["batches"][0]["status"] == "cancelled"
+    assert any(e["code"] == "scan.cancelled" for e in d["events"])
+
+
+async def test_cancel_queued_scan(harness) -> None:  # noqa: ANN001
+    c = await harness.login()
+    harness.sim_state.set_faults(slow_ms=3000, sticky=True)
+    pid = await builtin_profile_id(c)
+    first = await start(c, pid, {"source": "adf_simplex"})
+    second = await start(c, pid, {"source": "adf_simplex"})
+    assert second["status"] == "queued"
+    r = await c.post(f"/api/documents/{second['id']}/cancel")
+    assert r.status_code == 200 and r.json()["status"] == "discarded"
+    await c.post(f"/api/documents/{first['id']}/cancel")
+
+
+async def test_list_thumbnail_etag_and_login_csrf(harness) -> None:  # noqa: ANN001
+    c = harness.client()
+    from .conftest import ADMIN_PW
+
+    r = await c.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW})
+    assert r.json()["csrf_token"] == c.cookies["scanbox_csrf"]
+    c.headers["X-CSRF-Token"] = c.cookies["scanbox_csrf"]
+    pid = await builtin_profile_id(c)
+    doc = await start(c, pid, {"source": "adf_simplex"})
+    doc = await harness.wait_status(c, doc["id"], "stored")
+    items = (await c.get("/api/documents")).json()["items"]
+    assert items[0]["first_page_id"] == doc["pages"][0]["id"]
+    url = f"/api/pages/{doc['pages'][0]['id']}/image"
+    r1 = await c.get(url, params={"size": "thumb"})
+    etag = r1.headers["etag"]
+    r2 = await c.get(url, params={"size": "thumb"}, headers={"If-None-Match": etag})
+    assert r2.status_code == 304
+    await c.patch(f"/api/pages/{doc['pages'][0]['id']}", json={"edits": {"rotate": 90}})
+    r3 = await c.get(url, params={"size": "thumb"}, headers={"If-None-Match": etag})
+    assert r3.status_code == 200 and r3.headers["etag"] != etag

@@ -13,7 +13,8 @@ def main() -> None:
         from .main import create_app
 
         app = create_app(AppConfig(disable_background=True))
-        print(json.dumps(app.openapi(), indent=2, ensure_ascii=False))
+        data = json.dumps(app.openapi(), indent=2, ensure_ascii=False).encode("utf-8") + b"\n"
+        sys.stdout.buffer.write(data)  # bytes: independent of the console encoding (Windows cp1252)
         return
     import uvicorn
 

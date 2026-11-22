@@ -56,9 +56,9 @@ def login(body: LoginIn, request: Request, response: Response, s: Session = Depe
         log.warning("auth.login_failed", username=body.username[:50], ip=ip)
         raise HTTPException(401, detail={"code": "invalid_credentials", "message": "Benutzername oder Passwort falsch"})
     auth.login_limiter.success(ip, body.username)
-    auth.create_session(s, user, request, response, "local", ctx.config.cookie_secure)
+    _raw, csrf = auth.create_session(s, user, request, response, "local", ctx.config.cookie_secure)
     log.info("auth.login", user_id=user.id, method="local")
-    return MeOut(user=UserOut.model_validate(user))
+    return MeOut(user=UserOut.model_validate(user), csrf_token=csrf)
 
 
 @router.post("/logout", status_code=204)

@@ -1150,6 +1150,69 @@
         }
       }
     },
+    "/api/documents/{doc_id}/cancel": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Cancel Scan",
+        "description": "Stop a queued or running scan. Pages already received are kept (document → stored).",
+        "operationId": "cancel_scan_api_documents__doc_id__cancel_post",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/documents/{doc_id}/discard": {
       "post": {
         "tags": [
@@ -2779,7 +2842,7 @@
           "admin"
         ],
         "summary": "Clear Cache",
-        "description": "Delete cached raw + processed files of finished documents now. Unfinished work is kept.",
+        "description": "Delete cached raw + processed files of finished documents now.\n\nUnfinished work and unclaimed inbox items are kept.",
         "operationId": "clear_cache_api_admin_clear_cache_post",
         "responses": {
           "200": {
@@ -3891,6 +3954,18 @@
             "title": "Destinations",
             "default": []
           },
+          "first_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Page Id",
+            "description": "For list thumbnails (null when originals expired)"
+          },
           "profile_snapshot": {
             "$ref": "#/components/schemas/ProfileSettings"
           },
@@ -4299,6 +4374,18 @@
             "type": "array",
             "title": "Destinations",
             "default": []
+          },
+          "first_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Page Id",
+            "description": "For list thumbnails (null when originals expired)"
           }
         },
         "type": "object",
@@ -4985,6 +5072,11 @@
             "title": "Sharpen",
             "default": false
           },
+          "unpaper_clean": {
+            "type": "boolean",
+            "title": "Unpaper Clean",
+            "default": false
+          },
           "brightness": {
             "type": "number",
             "maximum": 1.0,
@@ -5051,7 +5143,13 @@
           },
           "builtin": {
             "type": "boolean",
-            "title": "Builtin"
+            "title": "Builtin",
+            "description": "Seeded default profile: cannot be deleted"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "description": "Visible to all users (built-in or admin-shared); only admins edit"
           },
           "owner_id": {
             "anyOf": [
@@ -5082,6 +5180,7 @@
           "name",
           "description",
           "builtin",
+          "shared",
           "owner_id",
           "settings"
         ],
@@ -5214,6 +5313,7 @@
               "color": "keep",
               "denoise": false,
               "sharpen": false,
+              "unpaper_clean": false,
               "brightness": 0.0,
               "contrast": 0.0,
               "split": {
@@ -5326,8 +5426,7 @@
           },
           "hits": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/QrHitOut"
             },
             "type": "array",
             "title": "Hits"
@@ -5352,6 +5451,62 @@
           "selected"
         ],
         "title": "QrDetectOut"
+      },
+      "QrHitOut": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "x": {
+            "type": "number",
+            "title": "X",
+            "description": "Page-relative box (0..1) on the oriented, uncropped page"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "w": {
+            "type": "number",
+            "title": "W"
+          },
+          "h": {
+            "type": "number",
+            "title": "H"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "QrHitOut"
       },
       "QrOptions": {
         "properties": {

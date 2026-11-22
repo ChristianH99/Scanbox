@@ -130,7 +130,9 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def create_session(s: Session, user: User, request: Request, response: Response, method: str, secure: bool) -> str:
+def create_session(s: Session, user: User, request: Request, response: Response, method: str,
+                   secure: bool) -> tuple[str, str]:
+    """Create a session; returns (raw session id, csrf token)."""
     raw = random_token(32)
     csrf = random_token(24)
     now = utcnow()
@@ -141,7 +143,7 @@ def create_session(s: Session, user: User, request: Request, response: Response,
     ))
     user.last_login_at = now
     set_session_cookies(response, raw, csrf, secure)
-    return raw
+    return raw, csrf
 
 
 def set_session_cookies(response: Response, raw: str, csrf: str, secure: bool) -> None:

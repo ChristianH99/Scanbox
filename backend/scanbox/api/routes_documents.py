@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -63,6 +63,7 @@ from .schemas import (
     PagesActionIn,
     QrDetectIn,
     QrDetectOut,
+    QrHitOut,
     ReorderIn,
     ScanIn,
     SplitIn,
@@ -80,6 +81,9 @@ def _notify(ctx: AppContext) -> None:
 
 def _summary(doc: Document, s: Session) -> DocumentSummary:
     out = DocumentSummary.model_validate(doc)
+    if not doc.raw_expired:
+        out.first_page_id = s.scalar(select(Page.id).where(Page.document_id == doc.id, Page.deleted.is_(False))
+                                     .order_by(Page.position).limit(1))
     out.destinations = [d.destination_type for d in doc.deliveries] or [
         d.get("type", "") for d in (doc.profile_snapshot or {}).get("destinations", []) if d.get("enabled", True)
     ]
@@ -268,6 +272,53 @@ def finish_document(doc_id: int, s: Session = Depends(get_session), ctx: AppCont
     return _detail(s, doc)
 
 
+@router.post("/documents/{doc_id}/cancel", response_model=DocumentDetail, responses=ERR)
+async def cancel_scan(doc_id: int, ctx: AppContext = CtxDep, p: Principal = PrincipalDep) -> DocumentDetail:
+    """Stop a queued or running scan. Pages already received are kept (document → stored)."""
+    from ..db import run_db
+
+    state = await run_db(_cancel_queued, doc_id, p)
+    if state == "running":
+        runner = ctx.worker.scan_runner if ctx.worker else None
+        if runner is not None:
+            runner.cancel_requests.add(doc_id)
+            job = runner.current_job
+            if job and job[0] == doc_id and ctx.scanner:
+                await ctx.scanner.client().cancel_job(job[1])  # unblocks a waiting NextDocument
+    return await run_db(_detail_by_id, doc_id, p)
+
+
+def _cancel_queued(doc_id: int, p: Principal) -> str:
+    from ..db import session_scope
+    from ..jobs.queue import cancel_for_document
+
+    with session_scope() as s:
+        doc = get_owned_document(s, doc_id, p)
+        if doc.status == st.SCANNING:
+            return "running"
+        if doc.status != st.QUEUED:
+            raise HTTPException(409, detail={"code": "invalid_state", "message": "Kein laufender Scan"})
+        n = cancel_for_document(s, doc.id, ("scan",))
+        if n == 0:
+            return "running"  # the worker just picked it up
+        for b in doc.batches:
+            if b.status == "queued":
+                b.status = "cancelled"
+        pages = s.scalar(select(func.count(Page.id)).where(Page.document_id == doc.id, Page.deleted.is_(False))) or 0
+        if pages:
+            st.transition(s, doc, st.STORED, code="scan.cancelled", message="Wartender Stapel abgebrochen")
+        else:
+            st.transition(s, doc, st.DISCARDED, code="scan.cancelled", message="Scan abgebrochen")
+        return "done"
+
+
+def _detail_by_id(doc_id: int, p: Principal) -> DocumentDetail:
+    from ..db import session_scope
+
+    with session_scope() as s:
+        return _detail(s, get_visible_document(s, doc_id, p))
+
+
 @router.post("/documents/{doc_id}/discard", response_model=DocumentDetail, responses=ERR)
 def discard_document(doc_id: int, s: Session = Depends(get_session), ctx: AppContext = CtxDep,
                      p: Principal = PrincipalDep) -> DocumentDetail:
@@ -432,7 +483,8 @@ def qr_detect(doc_id: int, body: QrDetectIn, s: Session = Depends(get_session), 
         if pg:
             pg.analysis = {**(pg.analysis or {}), **upd}
     sel = select_hit(hits, profile.qr) if hits else None
-    return QrDetectOut(page_id=page_id, zone=zone, hits=[h.to_dict() for h in hits], selected=sel.value if sel else None)
+    return QrDetectOut(page_id=page_id, zone=zone, hits=[QrHitOut(**h.to_dict()) for h in hits],
+                       selected=sel.value if sel else None)
 
 
 # ------------------------------------------------------------------ pages
@@ -486,7 +538,7 @@ def _render_cached(ctx: AppContext, page: Page, doc: Document, variant: str, siz
 
 
 @router.get("/pages/{page_id}/image", responses={200: {"content": {"image/jpeg": {}}}, **ERR})
-def page_image(page_id: str, variant: Literal["raw", "processed"] = "processed",
+def page_image(request: Request, page_id: str, variant: Literal["raw", "processed"] = "processed",
                size: Literal["thumb", "preview", "full"] = "preview", s: Session = Depends(get_session),
                ctx: AppContext = CtxDep, p: Principal = PrincipalDep) -> FileResponse:
     page, doc = get_visible_page(s, page_id, p)
@@ -503,7 +555,12 @@ def page_image(page_id: str, variant: Literal["raw", "processed"] = "processed",
         pg = s.get(Page, page_id)
         if pg:
             pg.analysis = {**(pg.analysis or {}), **upd}
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
+    # The cache file name is a hash of raw page + edits + profile processing → a perfect ETag.
+    etag = f'"{path.stem}"'
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)  # type: ignore[return-value]
+    return FileResponse(path, media_type="image/jpeg", headers=headers)
 
 
 @router.post("/pages/{page_id}/preview", responses={200: {"content": {"image/jpeg": {}}}, **ERR})

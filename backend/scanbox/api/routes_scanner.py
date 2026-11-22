@@ -110,7 +110,8 @@ profiles = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
 def _out(p: Profile, ctx: AppContext) -> ProfileOut:
     ps = ProfileSettings.model_validate(p.settings)
-    return ProfileOut(id=p.id, name=p.name, description=p.description, builtin=p.owner_id is None,
+    return ProfileOut(id=p.id, name=p.name, description=p.description, builtin=p.builtin_key is not None,
+                      shared=p.owner_id is None,
                       owner_id=p.owner_id, settings=ps,
                       problems=validate_against_caps(ps, ctx.scanner.capabilities if ctx.scanner else None))
 
