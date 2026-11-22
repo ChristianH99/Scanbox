@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!-- SYNTHETIC / GUESSED: the real format of GET /eSCL/WalkupSubscriptions is unknown.
+     Replace with a capture from tools/probe_scanner.py once available. -->
+<scan:WalkupScanSubscriptions xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
+	<scan:WalkupScanSubscription>
+		<scan:ResourceURI>/eSCL/WalkupSubscriptions/0f0e5c1a-1111-4c1b-9d55-0123456789ab</scan:ResourceURI>
+		<scan:HostIdentifier>Scanbox</scan:HostIdentifier>
+		<scan:Connection>Network</scan:Connection>
+		<scan:Shortcuts>
+			<scan:Shortcut>Document</scan:Shortcut>
+			<scan:Shortcut>Photo</scan:Shortcut>
+		</scan:Shortcuts>
+	</scan:WalkupScanSubscription>
+	<scan:WalkupScanSubscription>
+		<scan:ResourceURI>https://192.0.2.10:443/eSCL/WalkupSubscriptions/2b9e7f1c-2222-4c1b-9d55-0123456789ab</scan:ResourceURI>
+		<scan:HostIdentifier>OTHER-PC</scan:HostIdentifier>
+		<scan:Connection>Network</scan:Connection>
+	</scan:WalkupScanSubscription>
+</scan:WalkupScanSubscriptions>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WalkupScanSubscription xmlns="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schemas.hp.com/imaging/escl/2011/05/03 eSCL.xsd">
+	<HostIdentifier>Laptop (DESKTOP-X)</HostIdentifier>
+	<Connection>Network</Connection>
+	<Shortcuts>
+		<Shortcut>Save as PDF</Shortcut>
+		<Shortcut>Save as JPEG</Shortcut>
+		<Shortcut>Email as PDF</Shortcut>
+		<Shortcut>Everyday Scan</Shortcut>
+		<Shortcut>Paperless</Shortcut>
+	</Shortcuts>
+</WalkupScanSubscription>

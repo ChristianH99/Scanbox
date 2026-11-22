@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<scan:WalkupScanEvent xmlns:dest="http://schemas.hp.com/imaging/httpdestination/2011/10/13" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm" xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<scan:ResourceURI>/eSCL/WalkupSubscriptions/108b7a10-43ef-44b0-97ab-ea2f1274de50</scan:ResourceURI>
+	<scan:HostIdentifier>Laptop (DESKTOP-X)</scan:HostIdentifier>
+	<scan:Connection>Network</scan:Connection>
+	<scan:Event>HostSelected</scan:Event>
+</scan:WalkupScanEvent>
