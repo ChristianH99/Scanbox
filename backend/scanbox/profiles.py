@@ -78,6 +78,18 @@ class SplitOptions(Model):
     pattern: str | None = None  # regex for separator QR values (qr_pattern)
     remove_separator: bool = True  # only for qr_pattern: drop the separator sheet
 
+    @field_validator("pattern")
+    @classmethod
+    def _valid_pattern(cls, v: str | None) -> str | None:
+        if v:
+            if len(v) > 300:
+                raise ValueError("regex too long")
+            try:
+                re.compile(v)
+            except re.error as e:
+                raise ValueError(f"invalid regex: {e}") from e
+        return v or None
+
 
 class ProcessingOptions(Model):
     auto_rotate: bool = True
@@ -110,7 +122,10 @@ class QrOptions(Model):
         if v:
             if len(v) > 300:
                 raise ValueError("regex too long")
-            re.compile(v)
+            try:
+                re.compile(v)
+            except re.error as e:
+                raise ValueError(f"invalid regex: {e}") from e
         return v or None
 
     def effective_zone(self) -> Zone:

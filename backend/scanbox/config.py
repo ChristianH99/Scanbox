@@ -52,7 +52,7 @@ class AppConfig(BaseSettings):
     ocr_jobs: int | None = None
     nice_level: int = 10
     max_queued_scans: int = 5
-    min_free_mb: int = 1024
+    min_free_mb: int | None = None  # None → admin setting (default 1024)
 
     # Retention (None → admin setting / default)
     raw_retention_days: int | None = None
