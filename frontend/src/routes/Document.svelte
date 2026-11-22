@@ -247,6 +247,11 @@
     <!-- Primary actions -->
     {#if isOwner}
       <div class="flex flex-wrap gap-2">
+        {#if doc.status === 'queued' || doc.status === 'scanning'}
+          <button type="button" class="btn btn-secondary btn-lg" disabled={!!busy} onclick={() => act('cancel', () => docApi.cancel(id))} data-testid="doc-stop-scan">
+            {#if busy === 'cancel'}<Icon name="loader" />{:else}<Icon name="x-circle" />{/if}{t('scan.stop')}
+          </button>
+        {/if}
         {#if canFinish}
           <button type="button" class="btn btn-primary btn-lg" disabled={!!busy} onclick={() => act('finish', () => docApi.finish(id), t('doc.finish_started'))} data-testid="doc-finish">
             {#if busy === 'finish'}<Icon name="loader" />{:else}<Icon name={doc.status === 'done' ? 'refresh' : 'check'} />{/if}

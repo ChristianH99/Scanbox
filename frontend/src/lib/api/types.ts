@@ -41,12 +41,4 @@ export type ClearCache = S['ClearCacheOut'];
 export type TestResult = S['TestResultOut'];
 export type Diagnostics = S['DiagnosticsOut'];
 
-export interface QrHit {
-  value: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  page_id?: string | null;
-  page_index?: number | null;
-}
+export type QrHit = S['QrHitOut'];

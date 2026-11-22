@@ -118,6 +118,8 @@ export const de = {
   'scan.add_stack': 'Weiteren Stapel scannen',
   'scan.review': 'Prüfen / bearbeiten',
   'scan.cancel': 'Abbrechen',
+  'scan.stop': 'Scan stoppen',
+  'scan.stopped_hint': 'Scan gestoppt – die bereits empfangenen Seiten sind gespeichert.',
   'scan.open_document': 'Dokument öffnen',
   'scan.new_scan': 'Neuer Scan',
 

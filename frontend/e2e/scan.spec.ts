@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { apiLogin, createTestProfile, simLoad, uiLogin } from './helpers';
+import { expect, request, test } from '@playwright/test';
+import { apiLogin, createTestProfile, SIM, simLoad, uiLogin } from './helpers';
 
 let profileName = '';
 
@@ -66,4 +66,29 @@ test('empty feeder → visible error → load paper → scan remaining pages', a
   // Clean up: discard via the in-app confirmation dialog (no window.confirm).
   await panel.getByRole('button', { name: /Verwerfen|Discard/ }).click();
   await page.getByTestId('confirm-ok').click();
+});
+
+test('stop a running scan → pages received so far are kept (stored)', async ({ page }) => {
+  const sim = await request.newContext({ baseURL: SIM });
+  await simLoad('long_stack');
+  await sim.post('/_sim/faults', { data: { slow_ms: 1500, sticky: true } });
+  try {
+    await uiLogin(page);
+    await page.getByTestId('profile-select').selectOption({ label: profileName });
+    await page.getByTestId('start-scan').click();
+    const panel = page.getByTestId('active-document').first();
+    await expect(panel).toHaveAttribute('data-status', 'scanning', { timeout: 30_000 });
+    await expect(panel.getByTestId('live-thumbs').locator('img').first()).toBeVisible({ timeout: 30_000 });
+    await panel.getByTestId('stop-scan').click();
+    await expect(panel).toHaveAttribute('data-status', 'stored', { timeout: 30_000 });
+    const n = await panel.getByTestId('live-thumbs').locator('img').count();
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThan(30);
+    await panel.getByRole('button', { name: /Verwerfen|Discard/ }).click();
+    await page.getByTestId('confirm-ok').click();
+  } finally {
+    await sim.delete('/_sim/faults');
+    await sim.post('/_sim/reset');
+    await sim.dispose();
+  }
 });

@@ -128,8 +128,10 @@
           </button>
           <a href="/documents/{doc.id}" class="btn btn-secondary btn-lg"><Icon name="edit" />{t('scan.review')}</a>
           <button type="button" class="btn btn-ghost btn-lg" disabled={!!busy} onclick={discard}><Icon name="trash" />{t('doc.discard')}</button>
-        {:else if doc.status === 'queued'}
-          <button type="button" class="btn btn-ghost" disabled={!!busy} onclick={discard}><Icon name="x" />{t('scan.cancel')}</button>
+        {:else if doc.status === 'queued' || doc.status === 'scanning'}
+          <button type="button" class="btn btn-secondary btn-lg" disabled={!!busy} onclick={() => act('cancel', () => docApi.cancel(id))} data-testid="stop-scan">
+            {#if busy === 'cancel'}<Icon name="loader" />{:else}<Icon name="x-circle" />{/if}{t('scan.stop')}
+          </button>
         {:else if doc.status === 'done'}
           <a href={downloadUrl(doc.id)} class="btn btn-primary" download data-testid="download"><Icon name="download" />{t('doc.download')}</a>
           <a href="/documents/{doc.id}" class="btn btn-secondary"><Icon name="file" />{t('scan.open_document')}</a>

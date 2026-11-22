@@ -46,7 +46,8 @@
     }
   }
 
-  let canEdit = (p: Profile) => !p.builtin || !!session.user?.is_admin;
+  let canEdit = (p: Profile) => !p.shared || !!session.user?.is_admin;
+  let canDelete = (p: Profile) => canEdit(p) && !p.builtin;
 </script>
 
 <div class="space-y-4">
@@ -65,7 +66,7 @@
             <a href="/profiles/{p.id}" class="font-semibold hover:underline">{p.name}</a>
             {#if p.description}<p class="text-sm text-slate-600 dark:text-slate-400">{p.description}</p>{/if}
           </div>
-          {#if p.builtin}<span class="chip bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{t('profiles.shared')}</span>{/if}
+          {#if p.shared}<span class="chip bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{t('profiles.shared')}</span>{/if}
         </div>
         <p class="flex flex-wrap gap-1 text-xs">
           <span class="chip bg-slate-100 dark:bg-slate-800">{tMaybe(`source.${p.settings.source}`, p.settings.source)}</span>
@@ -85,7 +86,7 @@
         <div class="mt-auto flex flex-wrap gap-2 pt-1">
           <a href="/profiles/{p.id}" class="btn btn-secondary btn-sm"><Icon name={canEdit(p) ? 'edit' : 'eye'} size={16} />{canEdit(p) ? t('common.edit') : t('common.view')}</a>
           <button type="button" class="btn btn-ghost btn-sm" onclick={() => duplicate(p)}><Icon name="copy" size={16} />{t('profiles.duplicate')}</button>
-          {#if canEdit(p)}
+          {#if canDelete(p)}
             <button type="button" class="btn btn-ghost btn-sm" onclick={() => remove(p)}><Icon name="trash" size={16} />{t('common.delete')}</button>
           {/if}
         </div>

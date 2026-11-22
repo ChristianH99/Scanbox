@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../lib/components/Icon.svelte';
   import StatusBadge from '../lib/components/StatusBadge.svelte';
+  import ListThumb from '../lib/components/ListThumb.svelte';
   import { api, errorMessage } from '../lib/api/client';
   import type { DocumentList, DocumentSummary, Profile } from '../lib/api/types';
   import { docApi, downloadUrl } from '../lib/docs';
@@ -157,7 +158,8 @@
   <ul class="space-y-2" data-testid="history-list">
     {#each items as d (d.id)}
       <li class="card flex flex-wrap items-center gap-3 p-3">
-        <div class="min-w-0 flex-1 basis-60">
+        <a href="/documents/{d.id}" aria-hidden="true" tabindex="-1"><ListThumb pageId={d.first_page_id} updatedAt={d.updated_at} /></a>
+        <div class="min-w-0 flex-1 basis-48">
           <a href="/documents/{d.id}" class="block truncate font-medium hover:underline">{d.title || d.filename || `#${d.id}`}</a>
           <p class="text-xs text-slate-500">{fmtDateTime(d.created_at)} · {d.profile_name} · {t('doc.pages_count', { n: d.page_count })}</p>
           {#if d.filename && d.title}<p class="truncate text-xs text-slate-500">{d.filename}</p>{/if}

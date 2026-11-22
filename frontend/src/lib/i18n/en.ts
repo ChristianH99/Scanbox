@@ -114,6 +114,8 @@ export const en: Record<MessageKey, string> = {
   'scan.add_stack': 'Scan another stack',
   'scan.review': 'Review / edit',
   'scan.cancel': 'Cancel',
+  'scan.stop': 'Stop scan',
+  'scan.stopped_hint': 'Scan stopped – the pages received so far are saved.',
   'scan.open_document': 'Open document',
   'scan.new_scan': 'New scan',
 

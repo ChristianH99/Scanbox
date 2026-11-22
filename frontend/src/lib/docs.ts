@@ -17,6 +17,7 @@ export const docApi = {
   claim: (id: number) => api.post<DocumentDetail>(`/api/documents/${id}/claim`),
   addBatch: (id: number) => api.post<DocumentDetail>(`/api/documents/${id}/batches`),
   finish: (id: number) => api.post<DocumentDetail>(`/api/documents/${id}/finish`),
+  cancel: (id: number) => api.post<DocumentDetail>(`/api/documents/${id}/cancel`),
   discard: (id: number) => api.post<DocumentDetail>(`/api/documents/${id}/discard`),
   resend: (id: number) => api.post<DocumentDetail>(`/api/documents/${id}/resend`),
   retryDelivery: (id: number, deliveryId: number) => api.post<DocumentDetail>(`/api/documents/${id}/deliveries/${deliveryId}/retry`),

@@ -310,6 +310,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/{doc_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Scan
+         * @description Stop a queued or running scan. Pages already received are kept (document → stored).
+         */
+        post: operations["cancel_scan_api_documents__doc_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/documents/{doc_id}/discard": {
         parameters: {
             query?: never;
@@ -775,7 +795,9 @@ export interface paths {
         put?: never;
         /**
          * Clear Cache
-         * @description Delete cached raw + processed files of finished documents now. Unfinished work is kept.
+         * @description Delete cached raw + processed files of finished documents now.
+         *
+         *     Unfinished work and unclaimed inbox items are kept.
          */
         post: operations["clear_cache_api_admin_clear_cache_post"];
         delete?: never;
@@ -1272,6 +1294,11 @@ export interface components {
              * @default []
              */
             destinations: string[];
+            /**
+             * First Page Id
+             * @description For list thumbnails (null when originals expired)
+             */
+            first_page_id?: string | null;
             profile_snapshot: components["schemas"]["ProfileSettings"];
             /** Title Suggestion */
             title_suggestion: string | null;
@@ -1392,6 +1419,11 @@ export interface components {
              * @default []
              */
             destinations: string[];
+            /**
+             * First Page Id
+             * @description For list thumbnails (null when originals expired)
+             */
+            first_page_id?: string | null;
         };
         /** ErrorDetail */
         ErrorDetail: {
@@ -1630,6 +1662,11 @@ export interface components {
              */
             sharpen: boolean;
             /**
+             * Unpaper Clean
+             * @default false
+             */
+            unpaper_clean: boolean;
+            /**
              * Brightness
              * @default 0
              */
@@ -1666,8 +1703,16 @@ export interface components {
             name: string;
             /** Description */
             description: string;
-            /** Builtin */
+            /**
+             * Builtin
+             * @description Seeded default profile: cannot be deleted
+             */
             builtin: boolean;
+            /**
+             * Shared
+             * @description Visible to all users (built-in or admin-shared); only admins edit
+             */
+            shared: boolean;
             /** Owner Id */
             owner_id: number | null;
             settings: components["schemas"]["ProfileSettings"];
@@ -1736,6 +1781,7 @@ export interface components {
              *       "color": "keep",
              *       "denoise": false,
              *       "sharpen": false,
+             *       "unpaper_clean": false,
              *       "brightness": 0,
              *       "contrast": 0,
              *       "split": {
@@ -1815,11 +1861,29 @@ export interface components {
             page_id: string;
             zone: components["schemas"]["Zone"];
             /** Hits */
-            hits: {
-                [key: string]: unknown;
-            }[];
+            hits: components["schemas"]["QrHitOut"][];
             /** Selected */
             selected: string | null;
+        };
+        /** QrHitOut */
+        QrHitOut: {
+            /** Value */
+            value: string;
+            /**
+             * X
+             * @description Page-relative box (0..1) on the oriented, uncropped page
+             */
+            x: number;
+            /** Y */
+            y: number;
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+            /** Page Id */
+            page_id?: string | null;
+            /** Page Index */
+            page_index?: number | null;
         };
         /** QrOptions */
         QrOptions: {
@@ -2948,6 +3012,55 @@ export interface operations {
         };
     };
     finish_document_api_documents__doc_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_scan_api_documents__doc_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;

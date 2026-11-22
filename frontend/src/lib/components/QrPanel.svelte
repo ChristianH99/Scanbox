@@ -29,7 +29,7 @@
 
   let qr = $derived(doc.profile_snapshot.qr);
   let profileZone = $derived<Rect>(qr.zone_preset === 'custom' && qr.zone ? qr.zone : ZONE_PRESETS[qr.zone_preset === 'custom' ? 'full' : qr.zone_preset]);
-  let hits = $derived((result?.hits ?? []) as unknown as QrHit[]);
+  let hits = $derived((result?.hits ?? []) as QrHit[]);
 
   async function detect(zone?: Rect | null) {
     detecting = true;

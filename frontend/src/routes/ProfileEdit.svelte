@@ -32,7 +32,7 @@
   let contacts = $state<Contact[]>([]);
   let sampleUrl = $state<string | null>(null);
 
-  let readonly = $derived(!!profile?.builtin && !session.user?.is_admin);
+  let readonly = $derived(!!profile?.shared && !session.user?.is_admin);
   let caps = $derived(scanner.caps);
   let ic = $derived(s ? inputCaps(caps, s.source) : null);
   let ranges = $derived(caps?.ranges ?? {});
@@ -60,7 +60,7 @@
       userSettings = us;
       contacts = cts;
       if (isNew) {
-        const base = list.find((p) => p.builtin) ?? null;
+        const base = list.find((p) => p.builtin) ?? list.find((p) => p.shared) ?? null;
         s = clone(base?.settings ?? FALLBACK);
         name = '';
         description = '';
