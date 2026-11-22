@@ -319,7 +319,7 @@
                 <li class="flex flex-wrap items-center gap-2 py-2">
                   <Icon name={dl.destination_type === 'email' ? 'mail' : dl.destination_type === 'folder' ? 'folder' : dl.destination_type === 'paperless' ? 'file' : 'download'} />
                   <div class="min-w-0 flex-1">
-                    <p class="font-medium">{dl.label || tMaybe(`dest.${dl.destination_type}`, dl.destination_type)}</p>
+                    <p class="font-medium">{dl.label && dl.label !== dl.destination_type ? dl.label : tMaybe(`dest.${dl.destination_type}`, dl.destination_type)}</p>
                     <p class="text-xs text-slate-500">{t('delivery.attempts', { n: dl.attempts })}{#if dl.delivered_at} · {fmtDateTime(dl.delivered_at)}{/if}</p>
                     {#if dl.last_error}<p class="text-sm break-words text-red-700 dark:text-red-300">{dl.error_code ? tMaybe(`errors.${dl.error_code}`, '') : ''} {dl.last_error}</p>{/if}
                     {#if dl.result && dl.status === 'done'}
