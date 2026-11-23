@@ -18,7 +18,6 @@ sudo mkdir -p /volume1/docker/scanbox/{data,secrets}
 # 48+ random chars; keep a backup. Changing it invalidates sessions and stored secrets (SMTP/Paperless).
 openssl rand -base64 48 | sudo tee /volume1/docker/scanbox/secrets/secret_key >/dev/null
 echo 'a-long-local-admin-password' | sudo tee /volume1/docker/scanbox/secrets/admin_password >/dev/null
-echo 'the-sso-client-secret'       | sudo tee /volume1/docker/scanbox/secrets/oidc_client_secret >/dev/null
 sudo chmod 600 /volume1/docker/scanbox/secrets/*
 id your-dsm-user       # → uid / gid for `user:` in docker-compose.yml
 sudo chown -R <uid>:<gid> /volume1/docker/scanbox
@@ -44,10 +43,10 @@ Container Manager → *Project* → *Create* → path `/volume1/docker/scanbox`,
 | Variable | Meaning |
 |---|---|
 | `SCANBOX_BASE_URL` | The HTTPS URL users open, e.g. `https://scanbox.home.lan`. Used for the OIDC redirect URI and links in webhooks. |
-| `SCANBOX_SCANNER_URL` | Scanner address (`http://<ip>` or hostname; port if not 80). Optional: can be set and tested in the admin UI. A fixed DHCP lease is strongly recommended. |
+| `SCANBOX_SCANNER_URL` | Optional, **normally left unset**: set the scanner address in Admin → *Scanner* instead (see §6). If set here, the admin UI field becomes read-only. |
 | `SCANBOX_SECRET_KEY_FILE` / `SCANBOX_SECRET_KEY` | Session signing + encryption of stored secrets. Without it a key is generated in `/data/secret.key`. |
 | `SCANBOX_ADMIN_USERNAME`, `SCANBOX_ADMIN_PASSWORD(_FILE)` | Local admin (fallback when SSO is down). Password ≥ 8 characters; re-hashed on change. |
-| `SCANBOX_OIDC_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET(_FILE)`, `_SCOPES`, `_ADMIN_CLAIM`, `_ADMIN_VALUE` | SSO (see §5). |
+| `SCANBOX_OIDC_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET(_FILE)`, `_SCOPES`, `_ADMIN_CLAIM`, `_ADMIN_VALUE` | Optional, **normally left unset**: configure SSO in Admin → *SSO* instead (see §5). Each variable that is set pins its value and makes that field read-only in the UI. |
 | `SCANBOX_OUTPUT_ROOTS` | `Name=/path;Other=/path2` – folders users can deliver to (paths inside the container, mount them as volumes). |
 | `SCANBOX_PAPERLESS_URL`, `SCANBOX_PAPERLESS_CONSUME_DIR` | Paperless-ngx (API URL and/or mounted consume folder). |
 | `SCANBOX_OCR_CONCURRENCY` (1), `SCANBOX_OCR_JOBS` (2), `SCANBOX_NICE_LEVEL` (10) | CPU budget: OCR documents in parallel, Tesseract threads per document, process priority. |
@@ -79,13 +78,14 @@ DSM → *Control Panel* → *Login Portal* → *Advanced* → *Reverse Proxy* �
 2. *Application* → *Add* → **OIDC**:
    * Application name `Scanbox`
    * Redirect URI **`https://scanbox.home.lan/api/auth/oidc/callback`** (must match `SCANBOX_BASE_URL` exactly)
-   * Copy the client ID and secret into the compose file / secrets.
-3. Admin role: Scanbox makes a user admin when the claim `SCANBOX_OIDC_ADMIN_CLAIM` (default `groups`) contains one of the comma-separated values in `SCANBOX_OIDC_ADMIN_VALUE`. Whether Synology's SSO Server sends a `groups` claim depends on the DSM version and the user directory. If it doesn't, use a claim it does send, e.g. `SCANBOX_OIDC_ADMIN_CLAIM=preferred_username` with `SCANBOX_OIDC_ADMIN_VALUE=christian,anna`. Every SSO login writes the *names* of the received claims to the log (`auth.login … claims=[…]`, Admin → Diagnostics → download logs), so you can see which claim to use.
-4. The local admin always works as a fallback (`/login` → username/password).
+3. Sign in to Scanbox as the local admin → **Admin → SSO**: enter the issuer, client ID and client secret (stored encrypted), then save. The page also shows the exact redirect URI to register. Changes take effect immediately; no restart needed. The *Synology SSO* button appears on the login page once issuer and client ID are set.
+   (Alternatively pin them via the `SCANBOX_OIDC_*` variables; those fields are then read-only in the UI.)
+4. Admin role: Scanbox makes a user admin when the claim *Admin claim* (default `groups`) contains one of the comma-separated values in *Admin value*. Whether Synology's SSO Server sends a `groups` claim depends on the DSM version and the user directory. If it doesn't, use a claim it does send, e.g. *Admin claim* `preferred_username` with *Admin value* `christian,anna`. Every SSO login writes the *names* of the received claims to the log (`auth.login … claims=[…]`, Admin → Diagnostics → download logs), so you can see which claim to use.
+5. The local admin always works as a fallback (`/login` → username/password).
 
 ## 6. Scanner network settings
 
-* Give the scanner a fixed IP (DHCP reservation) and enter it in Admin → *Scanner* → *Test connection*. This shows the model, serial number and status.
+* Give the scanner a fixed IP (DHCP reservation), then enter its address in **Admin → *Scanner*** → *Test connection* → *Use this address*. The test shows the model, serial number and status; the address is saved and used immediately. Change it there whenever the scanner moves.
 * The container talks to the scanner over HTTP on the LAN (bridge networking is fine; the scanner never connects to the container).
 * The HP web UI (EWS) must have **eSCL / AirScan** enabled (usually on by default).
 
