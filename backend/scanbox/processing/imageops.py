@@ -177,22 +177,141 @@ def crop_abs(img: np.ndarray, rect: tuple[int, int, int, int], margin: int = 0) 
     return img[y0:y1, x0:x1]
 
 
+# ---------------------------------------------------------------------------- background
+# Long side of the working copy used for background estimation (~75 dpi for A4).
+_BG_WORK_SIDE = 900
+
+
+def _paper_mask(small: np.ndarray, tol: int = 35) -> tuple[np.ndarray, np.ndarray]:
+    """Pixels that look like bare paper: close to the page's paper colour in *every* channel.
+
+    Shading, tint, show-through and faint creases are close to the paper colour and count as paper;
+    ink, coloured areas and highlighter marks do not (so they are never "whitened away")."""
+    gray = to_gray(small)
+    bright = gray >= np.percentile(gray, 90)
+    if small.ndim == 2:
+        paper = np.array([np.median(small[bright])], np.float32)
+        dev = np.abs(small.astype(np.float32) - paper[0])
+    else:
+        paper = np.median(small[bright], axis=0).astype(np.float32)
+        dev = np.abs(small.astype(np.float32) - paper[None, None, :]).max(axis=2)
+    mask = (dev <= tol).astype(np.uint8)
+    # Isolated paper-coloured pixels inside photos/halftones are not paper.
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+    return mask.astype(bool), paper
+
+
+def estimate_background(img: np.ndarray) -> np.ndarray | None:
+    """Estimate the illumination/paper surface (same shape as ``img``, float32), or None when the
+    page has too little bare paper for a reliable estimate (photos, dark paper)."""
+    h, w = img.shape[:2]
+    f = max(1, round(max(h, w) / _BG_WORK_SIDE))
+    small = cv2.resize(img, (max(1, w // f), max(1, h // f)), interpolation=cv2.INTER_AREA) if f > 1 else img
+    mask, _paper = _paper_mask(small)
+    if mask.mean() < 0.35:
+        return None
+    m8 = mask.astype(np.uint8)
+    masked = small * (m8 if small.ndim == 2 else m8[:, :, None])
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+    # Max over nearby paper pixels: thin dark features (text, creases) never win.
+    bg = cv2.dilate(masked, k)
+    invalid = cv2.dilate(m8, k) == 0
+    if invalid.any():
+        # Large non-paper areas (photos, coloured boxes): interpolate the paper surface around them.
+        bg = cv2.inpaint(bg, invalid.astype(np.uint8) * 255, 5, cv2.INPAINT_TELEA)
+    bg = cv2.GaussianBlur(bg, (0, 0), 3)
+    bg = cv2.resize(bg, (w, h), interpolation=cv2.INTER_LINEAR) if f > 1 else bg
+    return np.maximum(bg.astype(np.float32), 1.0)
+
+
+def white_point(strength: float) -> float:
+    """Normalised brightness from which a pixel becomes pure white (0 → gentle, 1 → aggressive)."""
+    return 0.97 - 0.12 * min(1.0, max(0.0, float(strength)))
+
+
+_KNEE = 0.6  # tones below this (relative to paper) are left untouched
+
+
+def _highlight_curve(n: np.ndarray, wp: float) -> np.ndarray:
+    """Map [knee, wp] linearly onto [knee, 1] and everything above wp to white; darker tones keep
+    their value, so text, photos and colours don't get washed out."""
+    hi = _KNEE + (n - _KNEE) * ((1.0 - _KNEE) / (wp - _KNEE))
+    return np.where(n > _KNEE, hi, n)
+
+
+def normalize_background(img: np.ndarray, strength: float = 0.5) -> np.ndarray:
+    """Make the paper pure white: divide out the paper surface (removes shading, tint, creases and
+    show-through gradients), then lift near-white to white. Ink, colour and photos are kept."""
+    bg = estimate_background(img)
+    if bg is None:
+        return img
+    n = _highlight_curve(img.astype(np.float32) / bg, white_point(strength))
+    return (np.clip(n, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+
+
+def _edge_runs(dark: np.ndarray, band: int) -> np.ndarray:
+    """For a band whose outer edge is column 0: mask of dark runs that start at the edge and end
+    inside the band (per row). Runs that cross the whole band belong to page content."""
+    region = dark[:, :band]
+    first_light = np.where(region.all(axis=1), band, np.argmin(region, axis=1))
+    cols = np.arange(band)[None, :]
+    mask = np.zeros_like(dark, dtype=bool)
+    mask[:, :band] = (cols < first_light[:, None]) & (first_light[:, None] < band)
+    return mask
+
+
+def clean_borders(img: np.ndarray, band: float = 0.03) -> np.ndarray:
+    """Whiten dark artefacts in a thin band along each image edge (scanner backdrop strips, dark
+    corners, truncated JPEG rows). Dark runs that start at the edge but reach across the band – i.e.
+    content extending into the page – are left alone."""
+    gray = to_gray(img)
+    small, f = scale_to_max(gray, _BG_WORK_SIDE)
+    h, w = small.shape
+    bx, by = max(3, int(w * band)), max(3, int(h * band))
+    dark = small < 200
+    kill = _edge_runs(dark, bx)
+    kill |= _edge_runs(dark[:, ::-1], bx)[:, ::-1]
+    kill |= _edge_runs(dark.T, by).T
+    kill |= _edge_runs(dark[::-1, :].T, by).T[::-1, :]
+    if not kill.any():
+        return img
+    k8 = cv2.dilate(kill.astype(np.uint8) * 255, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+    if f != 1.0:
+        k8 = cv2.resize(k8, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+    out = img.copy()
+    out[k8 > 0] = 255
+    return out
+
+
 def ink_coverage(img: np.ndarray) -> float:
-    """Fraction of 'ink' pixels after removing specks and borders. Used for blank detection."""
+    """Fraction of real 'ink' pixels; used for blank detection.
+
+    Measured against the local paper tone with a contrast threshold, so shading, creases and
+    show-through from the back side do not count. Specks, edge artefacts and long hairlines
+    (fold lines) are ignored."""
     gray = to_gray(img)
     small, _ = scale_to_max(gray, 1000)
+    bg = estimate_background(small)
+    norm = small.astype(np.float32) / bg if bg is not None else small.astype(np.float32) / 255.0
     h, w = small.shape
-    my, mx = int(h * 0.05), int(w * 0.05)
-    core = small[my : h - my, mx : w - mx]
+    my, mx = int(h * 0.03), int(w * 0.03)
+    core = norm[my : h - my, mx : w - mx]
     if core.size == 0:
         return 0.0
-    th = cv2.adaptiveThreshold(
-        cv2.GaussianBlur(core, (3, 3), 0), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 25, 15
-    )
-    th = cv2.morphologyEx(th, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
-    # Remove tiny connected components (dust).
-    n, _labels, stats, _ = cv2.connectedComponentsWithStats(th, connectivity=8)
-    keep = sum(int(stats[i, cv2.CC_STAT_AREA]) for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= 6)
+    ink = (cv2.GaussianBlur(core, (3, 3), 0) < 0.70).astype(np.uint8)
+    n, _labels, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+    ch, cw = core.shape
+    keep = 0
+    for i in range(1, n):
+        x, y, bw, bh, area = (int(v) for v in stats[i])
+        if area < 6:
+            continue  # dust
+        if x == 0 or y == 0 or x + bw == cw or y + bh == ch:
+            continue  # touches the margin: backdrop / edge artefact
+        long_side, short_side = max(bw, bh), min(bw, bh)
+        if long_side >= 40 and (short_side <= 4 or area / long_side <= 3):
+            continue  # hairline (fold line, scanner streak)
+        keep += area
     return keep / float(core.size)
 
 
@@ -201,13 +320,24 @@ class Enhance:
     color: str = "keep"  # keep | color | gray | bw
     brightness: float = 0.0  # -1..1
     contrast: float = 0.0  # -1..1
-    bw_threshold: int | None = None  # None → Otsu
+    bw_threshold: int | None = None  # None → automatic
     denoise: bool = False
     sharpen: bool = False
+    clean_background: bool = False
+    clean_strength: float = 0.5  # 0..1
+
+
+def bw_auto_threshold(gray: np.ndarray) -> int:
+    """Otsu on a background-normalised page, clamped to a sane range (an almost empty page would
+    otherwise get a threshold inside the paper noise)."""
+    t, _ = cv2.threshold(cv2.GaussianBlur(gray, (3, 3), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return int(min(215, max(110, t)))
 
 
 def enhance(img: np.ndarray, e: Enhance) -> np.ndarray:
     out = img
+    if e.clean_background:
+        out = clean_borders(normalize_background(out, e.clean_strength))
     if e.color in ("gray", "bw"):
         out = to_gray(out)
     elif e.color == "color" and out.ndim == 2:
@@ -225,8 +355,10 @@ def enhance(img: np.ndarray, e: Enhance) -> np.ndarray:
     if e.color == "bw":
         g = to_gray(out)
         if e.bw_threshold is None:
-            g = cv2.GaussianBlur(g, (3, 3), 0)
-            _, out = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            # Threshold relative to the local paper tone: creases and shadows don't turn black.
+            if not e.clean_background:
+                g = normalize_background(g, 0.0)
+            _, out = cv2.threshold(g, bw_auto_threshold(g), 255, cv2.THRESH_BINARY)
         else:
             _, out = cv2.threshold(g, int(e.bw_threshold), 255, cv2.THRESH_BINARY)
     return out

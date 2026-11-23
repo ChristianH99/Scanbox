@@ -164,7 +164,7 @@
   <h1 class="text-xl font-semibold">{t('settings.title')}</h1>
   {#if loadError}<p class="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200" role="alert">{loadError}</p>{/if}
 
-  <section class="card grid gap-3 p-4 sm:grid-cols-3">
+  <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
     <h2 class="section-title sm:col-span-3">{t('settings.appearance')}</h2>
     <div><label class="label" for="lang">{t('settings.language')}</label>
       <select id="lang" class="input" value={i18n.locale} onchange={(e) => pref({ locale: (e.target as HTMLSelectElement).value as 'de' | 'en' })}>
@@ -196,7 +196,7 @@
         <li class="py-2 text-sm text-slate-500">{t('settings.no_contacts')}</li>
       {/each}
     </ul>
-    <form class="grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]" onsubmit={saveContact}>
+    <form class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto_auto]" onsubmit={saveContact}>
       <input class="input" placeholder={t('settings.contact_name')} aria-label={t('settings.contact_name')} bind:value={cName} maxlength="200" />
       <input class="input" type="email" required placeholder="name@example.org" aria-label={t('settings.contact_email')} bind:value={cEmail} />
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={cDefault} />{t('settings.contact_default')}</label>
@@ -256,7 +256,7 @@
         <li class="py-2 text-sm text-slate-500">{t('settings.no_tokens')}</li>
       {/each}
     </ul>
-    <form class="grid gap-2 sm:grid-cols-[1fr_10rem_auto]" onsubmit={createToken}>
+    <form class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_10rem_auto]" onsubmit={createToken}>
       <input class="input" required maxlength="100" placeholder={t('settings.token_name')} aria-label={t('settings.token_name')} bind:value={tokenName} />
       <input class="input" type="number" min="1" max="3650" placeholder={t('settings.token_days')} aria-label={t('settings.token_days')} bind:value={tokenDays} />
       <button type="submit" class="btn btn-primary"><Icon name="plus" />{t('settings.token_create')}</button>

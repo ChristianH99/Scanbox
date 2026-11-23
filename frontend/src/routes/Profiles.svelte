@@ -58,7 +58,7 @@
   {#if error}<p class="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200" role="alert">{error}</p>{/if}
   {#if loading}<p class="flex items-center gap-2"><Icon name="loader" />{t('common.loading')}</p>{/if}
 
-  <ul class="grid gap-3 md:grid-cols-2">
+  <ul class="grid grid-cols-1 gap-3 md:grid-cols-2">
     {#each profiles as p (p.id)}
       <li class="card flex flex-col gap-2 p-4">
         <div class="flex items-start gap-2">

@@ -126,7 +126,7 @@
       </button>
     </div>
     {#if showFilters}
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div><label class="label" for="f-status">{t('history.status')}</label>
           <select id="f-status" class="input" bind:value={status} onchange={applyFilters}>
             <option value="">{t('common.all')}</option>

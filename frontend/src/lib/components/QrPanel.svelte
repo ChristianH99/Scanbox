@@ -96,7 +96,7 @@
       }}
     >
       <label class="sr-only" for="qrval">{t('qr.value')}</label>
-      <input id="qrval" class="input min-w-0 flex-1 font-mono" bind:value maxlength="500" placeholder={t('qr.value_placeholder')} />
+      <input id="qrval" class="input w-auto min-w-[10rem] flex-1 font-mono" bind:value maxlength="500" placeholder={t('qr.value_placeholder')} />
       <button type="submit" class="btn btn-primary" disabled={saving}>{t('common.save')}</button>
     </form>
     <div class="flex flex-wrap gap-2 text-sm">
@@ -119,7 +119,7 @@
     {#if detectError}<p class="mt-2 text-sm text-red-700 dark:text-red-300" role="alert">{detectError}</p>{/if}
 
     {#if result}
-      <div class="mt-3 grid gap-3">
+      <div class="mt-3 grid grid-cols-1 gap-3">
         <div class="mx-auto w-full max-w-sm">
           <RectEditor bind:rect={testZone} src={imageUrl} label={t('qr.zone_test')} color="amber" disabled={!imageUrl}>
             {#snippet overlay()}

@@ -4861,6 +4861,17 @@
               }
             ],
             "title": "Sharpen"
+          },
+          "clean_background": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clean Background"
           }
         },
         "type": "object",
@@ -5076,6 +5087,23 @@
             "type": "boolean",
             "title": "Unpaper Clean",
             "default": false
+          },
+          "clean_background": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "on",
+              "off"
+            ],
+            "title": "Clean Background",
+            "default": "auto"
+          },
+          "clean_strength": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Clean Strength",
+            "default": 0.5
           },
           "brightness": {
             "type": "number",
@@ -5314,6 +5342,8 @@
               "denoise": false,
               "sharpen": false,
               "unpaper_clean": false,
+              "clean_background": "auto",
+              "clean_strength": 0.5,
               "brightness": 0.0,
               "contrast": 0.0,
               "split": {

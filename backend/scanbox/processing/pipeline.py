@@ -160,7 +160,7 @@ class Processor:
                 return None
             if doc.raw_expired:
                 st.transition(s, doc, st.FAILED, code="process.raw_expired", level="error",
-                              message="Originalseiten sind abgelaufen / raw pages expired", error_code="raw_expired")
+                              message="Originalseiten sind abgelaufen", error_code="raw_expired")
                 return None
             profile = ProfileSettings.model_validate(doc.profile_snapshot)
             pages = s.scalars(
@@ -173,7 +173,7 @@ class Processor:
             ]
             if not inputs:
                 st.transition(s, doc, st.NEEDS_ATTENTION, code="process.no_pages", level="error",
-                              message="Dokument hat keine Seiten / no pages", error_code="no_pages")
+                              message="Dokument hat keine Seiten", error_code="no_pages")
                 return None
             manual_qr = doc.qr_value if doc.qr_source in ("manual", "none") else None
             st.add_event(s, doc, "process.started", f"Lauf {run}, {len(inputs)} Seite(n)")

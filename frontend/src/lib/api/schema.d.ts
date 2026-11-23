@@ -1571,6 +1571,8 @@ export interface components {
             denoise?: boolean | null;
             /** Sharpen */
             sharpen?: boolean | null;
+            /** Clean Background */
+            clean_background?: boolean | null;
         };
         /** PageOut */
         PageOut: {
@@ -1666,6 +1668,17 @@ export interface components {
              * @default false
              */
             unpaper_clean: boolean;
+            /**
+             * Clean Background
+             * @default auto
+             * @enum {string}
+             */
+            clean_background: "auto" | "on" | "off";
+            /**
+             * Clean Strength
+             * @default 0.5
+             */
+            clean_strength: number;
             /**
              * Brightness
              * @default 0
@@ -1782,6 +1795,8 @@ export interface components {
              *       "denoise": false,
              *       "sharpen": false,
              *       "unpaper_clean": false,
+             *       "clean_background": "auto",
+             *       "clean_strength": 0.5,
              *       "brightness": 0,
              *       "contrast": 0,
              *       "split": {

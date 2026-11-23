@@ -41,7 +41,7 @@
   const FALLBACK: ProfileSettings = {
     source: 'adf_duplex', resolution: 300, color_mode: 'color', bw_strategy: 'software', page_size: 'a4', intent: 'Document', content_type: null,
     scanner: { multipick_detection: true, multipick_action: 'StopJob' },
-    processing: { auto_rotate: true, deskew: true, auto_crop: false, blank_removal: 'software', blank_threshold: 0.004, color: 'keep', bw_threshold: null, denoise: false, sharpen: false, brightness: 0, contrast: 0, split: { mode: 'off', pattern: null, remove_separator: true } },
+    processing: { auto_rotate: true, deskew: true, auto_crop: false, blank_removal: 'software', blank_threshold: 0.004, color: 'keep', bw_threshold: null, denoise: false, sharpen: false, unpaper_clean: false, clean_background: 'auto', clean_strength: 0.5, brightness: 0, contrast: 0, split: { mode: 'off', pattern: null, remove_separator: true } },
     qr: { enabled: false, zone_preset: 'top_right', zone: null, pages: 'first', selection: 'reading_order', regex: null, on_missing: 'warn', add_to_filename: true },
     ocr: { enabled: true, languages: ['deu', 'eng'], suggest_title: true },
     output: { format: 'pdfa', compression: 'medium', jpeg_quality: 85, target_size_mb: null },
@@ -181,7 +181,7 @@
 
     <fieldset disabled={readonly} class="space-y-4">
       <!-- General -->
-      <section class="card grid gap-3 p-4 sm:grid-cols-2">
+      <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
         <h2 class="section-title sm:col-span-2">{t('profile.general')}</h2>
         <div><label class="label" for="pname">{t('profile.name')}</label><input id="pname" class="input" bind:value={name} required maxlength="100" /></div>
         <div><label class="label" for="pdesc">{t('profile.description')}</label><input id="pdesc" class="input" bind:value={description} maxlength="300" /></div>
@@ -192,7 +192,7 @@
       </section>
 
       <!-- Scanning -->
-      <section class="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
         <h2 class="section-title sm:col-span-2 lg:col-span-3">{t('profile.scanning')}</h2>
         <div><label class="label" for="src">{t('scan.sides')}</label>
           <select id="src" class="input" bind:value={s.source}>
@@ -241,7 +241,7 @@
       <!-- Scanner options -->
       <details class="card p-4">
         <summary class="section-title cursor-pointer">{t('profile.scanner_options')}</summary>
-        <div class="mt-3 grid gap-4 sm:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {#if caps?.blank_page_detection}
             <div>
               <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" checked={!!s.scanner.blank_page_removal} onchange={(e) => (s!.scanner.blank_page_removal = (e.target as HTMLInputElement).checked || null)} />{t('profile.scanner_blank')}</label>
@@ -278,7 +278,7 @@
       <!-- Processing -->
       <details class="card p-4" open>
         <summary class="section-title cursor-pointer">{t('profile.processing')}</summary>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={s.processing.auto_rotate} />{t('profile.auto_rotate')}</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={s.processing.deskew} />{t('profile.deskew')}</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={s.processing.auto_crop} />{t('profile.auto_crop')}</label>
@@ -305,11 +305,23 @@
               }} />
               <p class="hint">{t('profile.bw_threshold_hint')}</p></div>
           {/if}
+          <div><label class="label" for="pclean">{t('profile.clean_background')}</label>
+            <select id="pclean" class="input" bind:value={s.processing.clean_background}>
+              <option value="auto">{t('clean.auto')}</option>
+              <option value="on">{t('common.on')}</option>
+              <option value="off">{t('common.off')}</option>
+            </select>
+            <p class="hint">{t('profile.clean_background_hint')}</p></div>
+          {#if s.processing.clean_background !== 'off'}
+            <div><label class="label" for="pcls">{t('profile.clean_strength')} ({Math.round(s.processing.clean_strength * 100)} %)</label>
+              <input id="pcls" type="range" min="0" max="1" step="0.05" class="w-full accent-brand-700" bind:value={s.processing.clean_strength} />
+              <p class="hint">{t('profile.clean_strength_hint')}</p></div>
+          {/if}
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={s.processing.denoise} />{t('editor.denoise')}</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={s.processing.sharpen} />{t('editor.sharpen')}</label>
           <div><label class="label" for="pb">{t('editor.brightness')} ({s.processing.brightness})</label><input id="pb" type="range" min="-1" max="1" step="0.05" class="w-full accent-brand-700" bind:value={s.processing.brightness} /></div>
           <div><label class="label" for="pc">{t('editor.contrast')} ({s.processing.contrast})</label><input id="pc" type="range" min="-1" max="1" step="0.05" class="w-full accent-brand-700" bind:value={s.processing.contrast} /></div>
-          <div class="sm:col-span-2 lg:col-span-3 grid gap-3 sm:grid-cols-3">
+          <div class="sm:col-span-2 lg:col-span-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div><label class="label" for="split">{t('profile.split')}</label>
               <select id="split" class="input" bind:value={s.processing.split.mode}>
                 {#each ['off', 'qr_change', 'qr_pattern'] as v}<option value={v}>{t(`split.${v}` as 'split.off')}</option>{/each}
@@ -324,7 +336,7 @@
       </details>
 
       <!-- OCR + output -->
-      <section class="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
         <h2 class="section-title sm:col-span-2 lg:col-span-3">{t('profile.ocr_output')}</h2>
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox" bind:checked={s.ocr.enabled} data-testid="ocr-enabled" />{t('profile.ocr')}</label>
         {#if s.ocr.enabled}
@@ -370,7 +382,7 @@
       <section class="card space-y-3 p-4">
         <label class="flex items-center gap-2"><input type="checkbox" class="checkbox" bind:checked={s.qr.enabled} /><span class="section-title">{t('profile.qr')}</span></label>
         {#if s.qr.enabled}
-          <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <ZoneEditor bind:preset={s.qr.zone_preset} bind:zone={s.qr.zone} {sampleUrl} disabled={readonly} />
             <div class="space-y-3">
               <div><label class="label" for="qpages">{t('profile.qr_pages')}</label>

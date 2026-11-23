@@ -206,7 +206,7 @@
 <div class="space-y-4">
   <h1 class="text-xl font-semibold">{t('admin.title')}</h1>
 
-  <nav class="-mx-3 flex gap-1 overflow-x-auto px-3 pb-1" aria-label={t('admin.title')}>
+  <nav class="flex flex-wrap gap-1" aria-label={t('admin.title')}>
     {#each TABS as [k, label]}
       <a href="/admin/{k}" class="btn btn-sm shrink-0 {tab === k ? 'btn-primary' : 'btn-secondary'}" aria-current={tab === k ? 'page' : undefined}>{t(label)}</a>
     {/each}
@@ -260,7 +260,7 @@
       </div>
     </section>
   {:else if tab === 'sso'}
-    <section class="card grid gap-3 p-4 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
       <h2 class="section-title sm:col-span-2">{t('admin.tab.sso')}</h2>
       <div class="sm:col-span-2">
         <span class="label">{t('admin.redirect_uri')}</span>
@@ -277,7 +277,7 @@
       <AdminField key="oidc.button_label" label={t('admin.oidc_button')} {settings} bind:draft bind:clear />
     </section>
   {:else if tab === 'mail'}
-    <section class="card grid gap-3 p-4 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
       <h2 class="section-title sm:col-span-2">SMTP</h2>
       <AdminField key="smtp.host" label={t('admin.smtp_host')} {settings} bind:draft bind:clear placeholder="smtp.gmail.com" />
       <AdminField key="smtp.port" label={t('admin.smtp_port')} kind="number" {settings} bind:draft bind:clear />
@@ -301,7 +301,7 @@
       </div>
     </section>
   {:else if tab === 'paperless'}
-    <section class="card grid gap-3 p-4 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
       <h2 class="section-title sm:col-span-2">Paperless-ngx</h2>
       <AdminField key="paperless.url" label={t('admin.paperless_url')} {settings} bind:draft bind:clear placeholder="http://paperless:8000" />
       <AdminField key="paperless.consume_dir" label={t('admin.paperless_consume')} {settings} bind:draft bind:clear placeholder="/consume" hint={t('admin.paperless_consume_hint')} />
@@ -326,7 +326,7 @@
       {/each}
       <button type="button" class="btn btn-secondary btn-sm" disabled={settings['output.roots']?.locked} onclick={() => (roots = [...roots, { name: '', path: '' }])}><Icon name="plus" size={16} />{t('common.add')}</button>
     </section>
-    <section class="card grid gap-3 p-4 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
       <h2 class="section-title sm:col-span-2">{t('admin.retention_jobs')}</h2>
       <AdminField key="retention.raw_days" label={t('admin.raw_days')} kind="number" {settings} bind:draft bind:clear />
       <AdminField key="retention.processed_days" label={t('admin.processed_days')} kind="number" {settings} bind:draft bind:clear />
@@ -342,7 +342,7 @@
           {#each usageParts as [, bytes, color]}<div class={color} style="width:{(100 * bytes) / total}%"></div>{/each}
           <div class="flex-1"></div>
         </div>
-        <ul class="grid gap-1 text-sm sm:grid-cols-2">
+        <ul class="grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
           {#each usageParts as [label, bytes, color]}
             <li class="flex items-center gap-2"><span class="size-3 rounded {color}"></span><span class="flex-1">{t(label)}</span><span class="font-mono">{fmtBytes(bytes)}</span></li>
           {/each}
@@ -357,7 +357,7 @@
       <button type="button" class="btn btn-danger" onclick={clearCache}><Icon name="trash" />{t('admin.clear_cache')}</button>
     </section>
   {:else if tab === 'walkup'}
-    <section class="card grid gap-3 p-4 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
       <h2 class="section-title sm:col-span-2">{t('admin.tab.walkup')}</h2>
       <div class="sm:col-span-2"><AdminField key="walkup.enabled" label={t('admin.walkup_enabled')} kind="bool" {settings} bind:draft bind:clear hint={t('admin.walkup_hint')} /></div>
       <AdminField key="walkup.default_profile_id" label={t('admin.walkup_profile')} kind="select" options={[{ value: '', label: '–' }, ...profiles.map((p) => ({ value: String(p.id), label: p.name }))]} {settings} bind:draft bind:clear />
@@ -394,7 +394,7 @@
     </section>
   {:else if tab === 'diagnostics'}
     {#if diag}
-      <section class="card grid gap-4 p-4 sm:grid-cols-2">
+      <section class="card grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
         <div>
           <h2 class="section-title mb-2">{t('admin.system')}</h2>
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

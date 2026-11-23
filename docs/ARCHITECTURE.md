@@ -205,17 +205,46 @@ Per page, in this order:
 | 3 | **Fine rotation / deskew** | `edits.angle` if set, else auto-deskew (Hough / minAreaRect on text) when `deskew` is on | Limited to ±15°. |
 | 4 | **QR detection** | zone from profile | See §8. Runs on the *oriented, deskewed, uncropped* image. |
 | 5 | **Crop** | `edits.crop` (relative rect) or auto-crop | Auto-crop finds the paper against the scanner background. |
-| 6 | **Colour + enhancement** | `edits` | colour/grey/B&W conversion, brightness, contrast, threshold (B&W), denoise, sharpen. |
-| 7 | **Blank detection** | profile | Ink-coverage score on the cropped page. Blank pages are flagged `is_blank` and excluded from output (but kept and restorable in the editor). |
+| 6 | **Background cleanup** | profile `clean_background` (`auto` = on unless the profile scans photos), `edits.clean_background` | See below. |
+| 7 | **Colour + enhancement** | `edits` | colour/grey/B&W conversion, brightness, contrast, threshold (B&W), denoise, sharpen. |
+| 8 | **Blank detection** | profile | Ink coverage measured against the local paper tone (see below). Blank pages are flagged `is_blank` and excluded from output (but kept and restorable in the editor). |
+
+**Background cleanup** (`imageops.normalize_background` + `clean_borders`), built from real N4000 scans:
+1. *Paper mask*: pixels within 35 levels of the page's paper colour in every channel (after a 3×3 opening).
+   Shading, grey tint, show-through and faint creases are paper; ink, coloured areas and highlighter are not.
+2. *Paper surface*: on a ~75 dpi copy, a 15×15 max filter over paper pixels only, so thin dark features
+   never win. Large non-paper areas (photos, coloured boxes) are inpainted from the surrounding paper.
+   Pages with < 35 % paper (photos, dark paper) are left unchanged.
+3. Divide the page by that surface, then apply a highlight curve. Tones below 60 % of the paper stay
+   unchanged, and the range up to the white point (0.97 − 0.12 × strength) is stretched to white.
+   Text, photos and colours keep their values.
+4. *Edge artefacts*: per row/column, a dark run that starts at the image edge and ends within 3 % of the
+   width/height is whitened. This covers the backdrop strip, dark corners, and the truncated grey JPEG rows
+   the N4000 sometimes sends. Runs reaching further in are content and are kept.
+
+B/W with an automatic threshold always thresholds the background-normalised page (Otsu, clamped to
+110–215), so creases and shadows don't turn black.
+
+**Blank detection** (`imageops.ink_coverage`): ink is darker than 70 % of the local paper tone after the same
+background estimate. Specks (< 6 px), components touching the 3 % margin, and long hairlines (fold lines) are
+ignored. Real pages: empty N4000 back side 0.0000, sparse flyer 0.12, simulator text pages 0.036–0.05
+(threshold 0.004).
+It runs twice:
+* **At ingest**, right after each page is stored, in the background (one at a time) on a reduced copy
+  without orientation/deskew. It sets `is_blank` and `analysis.ink` and publishes `page.updated`, so the
+  review already shows *Blank* badges. This is best effort: a crash only loses the hint.
+* **In the pipeline**, on the final rendered page. This is authoritative.
+
+Preview renders are cached by a key that includes `RENDER_VERSION` (bump it when rendering changes).
 
 Then, per document:
 
-8. **Split** (optional) at separator pages (QR value change / QR pattern match) → child documents.
-9. **Assemble**: `img2pdf` (lossless for JPEG) or Pillow for PNG/TIFF.
-10. **OCR**: `ocrmypdf --output-type pdfa|pdf -l deu+eng --jobs N --optimize 1..3`, run under `nice`. Text sidecar → `documents.ocr_text` → FTS.
-11. **Compression**: OCRmyPDF `--optimize`, plus Ghostscript re-render for target size (`/ebook`, `/screen`) if needed.
-12. **Title/date suggestion** from OCR text (simple heuristics: first strong line, first date). Always editable.
-13. **Filename** from template (§9).
+9. **Split** (optional) at separator pages (QR value change / QR pattern match) → child documents.
+10. **Assemble**: `img2pdf` (lossless for JPEG) or Pillow for PNG/TIFF.
+11. **OCR**: `ocrmypdf --output-type pdfa|pdf -l deu+eng --jobs N --optimize 1..3`, run under `nice`. Text sidecar → `documents.ocr_text` → FTS.
+12. **Compression**: OCRmyPDF `--optimize`, plus Ghostscript re-render for target size (`/ebook`, `/screen`) if needed.
+13. **Title/date suggestion** from OCR text (simple heuristics: first strong line, first date). Always editable.
+14. **Filename** from template (§9).
 
 The editor preview uses the same step functions (`GET /api/pages/{id}/image?variant=processed` for saved edits, `POST /api/pages/{id}/preview` with unsaved edits), so what you see is what gets produced. Renders are cached under a hash of raw page + edits + profile processing, which also serves as the HTTP `ETag`.
 

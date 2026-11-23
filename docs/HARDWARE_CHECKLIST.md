@@ -29,6 +29,8 @@ Useful tools:
 | A13 | **Location header** host name (`HPB0795E.local`) | Log line `scan.job_created` | Scanbox always rewrites to the configured address (mDNS doesn't resolve in Docker). |
 | A14 | **Status polling** every 3 s while the UI is open doesn't disturb scanning | Scan with the UI open | Interval in `scanner/service.py::_interval`. |
 | A15 | **Real QR stickers**: detection rate at 200/300 dpi, B/W and colour, slightly rotated | Profile "Dokument mit QR", several documents | Detection uses the zone after orientation+deskew, before crop. If detection is weak, raise the dpi or widen the zone. |
+| A17 | **Truncated JPEG** ("Corrupt JPEG data: found marker 0xd9 instead of RST2"): seen once on the first page of a duplex scan, with the last ~4 pixel rows grey | Check the log and the bottom edge of the first pages of a few scans | Harmless with *Clean background* on (edge cleanup whitens them). If it happens often or cuts off more, report it: it may be a transfer issue. |
+| A18 | **Background cleanup and blank detection on your paper**: recycled/grey paper, coloured forms, thin paper with strong show-through | Scan such pages, compare *Original* and *Result* in the page editor | Adjust *Strength* in the profile (higher removes more show-through, but also very light print). Blank threshold is in the profile too. |
 | A16 | **Auto-orientation** (Tesseract OSD) on upside-down pages, and on pages with little text | Feed a page upside down | Low-confidence OSD results (<1.5) are ignored on purpose. Manual rotation is always possible. |
 
 ## B. Walk-up scan (scanner button) – experimental, feature-flagged

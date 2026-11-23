@@ -157,12 +157,18 @@
     return v === 'default' ? null : v === 'on';
   }
 
+  // Mirrors backend profiles.effective_clean_background
+  let profileCleans = $derived(
+    (profile.processing.clean_background ?? 'auto') === 'auto'
+      ? profile.intent !== 'Photo' && profile.content_type !== 'Photo'
+      : profile.processing.clean_background === 'on',
+  );
   let effColor = $derived(edits.color ?? (profile.processing.color !== 'keep' ? profile.processing.color : profile.color_mode === 'bw' ? 'bw' : 'keep'));
   let rawUrl = $derived(pageImageUrl(page, 'preview', 'raw'));
 </script>
 
 <Modal bind:open title={t('editor.page_title', { n: index + 1, total })} size="full" onclose={() => void close()}>
-  <div class="grid h-full gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+  <div class="grid grid-cols-1 h-full gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
     <!-- Image area -->
     <div class="flex min-h-0 flex-col gap-2">
       <div class="flex flex-wrap items-center gap-2">
@@ -287,6 +293,15 @@
             {#if edits.bw_threshold !== null && edits.bw_threshold !== undefined}<button type="button" class="text-xs underline" onclick={() => (edits = { ...edits, bw_threshold: null })}>{t('editor.threshold_auto')}</button>{/if}
           </div>
         {/if}
+
+        <div>
+          <label class="label" for="clean">{t('profile.clean_background')}</label>
+          <select id="clean" class="input" value={triValue(edits.clean_background)} onchange={(e) => (edits = { ...edits, clean_background: fromTri((e.target as HTMLSelectElement).value) })}>
+            <option value="default">{t('editor.profile_default', { v: profileCleans ? t('common.on') : t('common.off') })}</option>
+            <option value="on">{t('common.on')}</option>
+            <option value="off">{t('common.off')}</option>
+          </select>
+        </div>
 
         {#each [['denoise', 'editor.denoise'], ['sharpen', 'editor.sharpen']] as const as [k, lbl]}
           <div>

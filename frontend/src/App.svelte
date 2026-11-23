@@ -64,6 +64,7 @@
   interface NavItem {
     href: string;
     label: MessageKey;
+    short?: MessageKey; // bottom navigation on phones
     icon: IconName;
     match: string[];
     badge?: number;
@@ -73,7 +74,7 @@
     { href: '/inbox', label: 'nav.inbox', icon: 'inbox', match: ['inbox'], badge: inboxCount },
     { href: '/history', label: 'nav.history', icon: 'history', match: ['history'] },
     { href: '/profiles', label: 'nav.profiles', icon: 'layers', match: ['profiles', 'profile'] },
-    { href: '/settings', label: 'nav.settings', icon: 'user', match: ['settings'] },
+    { href: '/settings', label: 'nav.settings', short: 'nav.settings_short', icon: 'user', match: ['settings'] },
     ...(session.user?.is_admin ? [{ href: '/admin', label: 'nav.admin' as MessageKey, icon: 'shield' as IconName, match: ['admin'] }] : []),
   ]);
   let active = $derived(router.route.name);
@@ -175,7 +176,7 @@
           aria-current={item.match.includes(active) ? 'page' : undefined}
         >
           <Icon name={item.icon} size={22} />
-          <span class="max-w-full truncate px-0.5">{t(item.label)}</span>
+          <span class="max-w-full truncate px-0.5">{t(item.short ?? item.label)}</span>
           {#if item.badge}<span class="absolute top-1 right-[calc(50%-20px)] chip bg-amber-500 px-1.5 text-[10px] text-white">{item.badge}</span>{/if}
         </a>
       {/each}

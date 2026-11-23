@@ -37,19 +37,20 @@ class ScanFailure(Exception):
 
 
 USER_MESSAGES = {
-    "feeder_empty": "Kein Papier im Einzug / feeder is empty",
-    "paper_jam": "Papierstau / paper jam",
-    "cover_open": "Abdeckung offen / cover open",
-    "multipick": "Mehrfacheinzug erkannt / multiple sheets fed at once",
-    "scanner_offline": "Scanner nicht erreichbar / scanner offline",
-    "scanner_busy": "Scanner belegt / scanner busy",
-    "scanner_timeout": "Zeitüberschreitung / scanner timeout",
-    "insufficient_disk": "Zu wenig Speicherplatz / not enough disk space",
-    "scanner_not_configured": "Kein Scanner konfiguriert / no scanner configured",
-    "scan_rejected": "Scanner hat den Auftrag abgelehnt / scanner rejected the job",
-    "cancelled": "Scan abgebrochen / scan cancelled",
-    "connection_lost": "Verbindung während einer Seite abgebrochen – evtl. fehlt ein Blatt, bitte prüfen "
-    "/ connection lost mid-page – a sheet may be missing",
+    # Server-side event texts are German (like all event messages); the UI shows a localized title
+    # per error code above them.
+    "feeder_empty": "Kein Papier im Einzug",
+    "paper_jam": "Papierstau",
+    "cover_open": "Abdeckung offen",
+    "multipick": "Mehrfacheinzug erkannt",
+    "scanner_offline": "Scanner nicht erreichbar",
+    "scanner_busy": "Scanner belegt",
+    "scanner_timeout": "Zeitüberschreitung",
+    "insufficient_disk": "Zu wenig Speicherplatz",
+    "scanner_not_configured": "Kein Scanner konfiguriert",
+    "scan_rejected": "Scanner hat den Auftrag abgelehnt",
+    "cancelled": "Scan abgebrochen",
+    "connection_lost": "Verbindung während einer Seite abgebrochen – evtl. fehlt ein Blatt, bitte prüfen",
 }
 
 ADF_ERRORS = {
@@ -121,6 +122,9 @@ class ScanRunner:
         # Documents whose running scan the user asked to stop (checked between pages).
         self.cancel_requests: set[int] = set()
         self.current_job: tuple[int, str] | None = None  # (document_id, eSCL job URI)
+        # Blank-page checks run beside the scan (one at a time) so the review shows them early.
+        self._analysis_sem = asyncio.Semaphore(1)
+        self._analysis_tasks: set[asyncio.Task] = set()
 
     @property
     def scanner(self):  # noqa: ANN201
@@ -209,9 +213,10 @@ class ScanRunner:
                         raise
                     if page is None:
                         break
-                    await run_db(self._store_page, doc_id, batch_id, page.content, page.content_type, duplex,
-                                 received)
+                    page_id = await run_db(self._store_page, doc_id, batch_id, page.content, page.content_type,
+                                           duplex, received)
                     received += 1
+                    self._schedule_blank_check(doc_id, page_id, profile)
                 if doc_id in self.cancel_requests:
                     await client.cancel_job(job_uri)
                     return BatchOutcome(received, "cancelled", USER_MESSAGES["cancelled"])
@@ -317,7 +322,7 @@ class ScanRunner:
 
     def _store_page(
         self, doc_id: int, batch_id: int, data: bytes, ctype: str, duplex: bool, index: int
-    ) -> None:
+    ) -> str:
         ext = "jpg" if "jpeg" in ctype else ("pdf" if "pdf" in ctype else "bin")
         page_id, path, sha = self.ctx.storage.save_raw_page(doc_id, data, ext)  # persisted first
         w, h, dpi = _image_meta(data)
@@ -356,6 +361,54 @@ class ScanRunner:
             audience=owner,
         )
         log.info("scan.page_stored", page_id=page_id, bytes=len(data))
+        return page_id
+
+    # ------------------------------------------------------------------ early blank detection
+    def _schedule_blank_check(self, doc_id: int, page_id: str, profile: ProfileSettings) -> None:
+        """Best effort: mark blank pages while the scan is still running, so the review shows them
+        before processing. Processing measures again, so a lost check (crash) only loses the hint."""
+        if profile.processing.blank_removal not in ("software", "both"):
+            return
+        t = asyncio.create_task(self._blank_check(doc_id, page_id, profile))
+        self._analysis_tasks.add(t)
+        t.add_done_callback(self._analysis_tasks.discard)
+
+    async def _blank_check(self, doc_id: int, page_id: str, profile: ProfileSettings) -> None:
+        try:
+            async with self._analysis_sem:
+                ink = await asyncio.to_thread(self._measure_page, page_id, profile)
+                if ink is None:
+                    return
+                owner = await run_db(self._save_blank, page_id, ink, profile.processing.blank_threshold)
+            if owner is not None:
+                self.ctx.bus.publish("page.updated", {"document_id": doc_id, "page_id": page_id}, audience=owner)
+        except Exception:  # noqa: BLE001 - a hint only; never disturb the scan
+            log.warning("scan.blank_check_failed", page_id=page_id, exc_info=True)
+
+    def _measure_page(self, page_id: str, profile: ProfileSettings) -> float | None:
+        from ..processing import imageops as ops
+        from ..processing.render import measure_ink_fast
+
+        with session_scope() as s:
+            rel = s.scalar(select(Page.raw_path).where(Page.id == page_id))
+        if not rel:
+            return None
+        try:
+            raw = ops.load(str(self.ctx.storage.abs(rel)))
+        except (OSError, ValueError):
+            return None  # not an image (e.g. PDF page) – processing decides
+        return measure_ink_fast(raw, profile)
+
+    @staticmethod
+    def _save_blank(page_id: str, ink: float, threshold: float) -> int | None:
+        with session_scope() as s:
+            p = s.get(Page, page_id)
+            if p is None or p.deleted:
+                return None
+            p.analysis = {**(p.analysis or {}), "ink": round(ink, 5)}
+            p.is_blank = ink < threshold
+            doc = s.get(Document, p.document_id)
+            return doc.owner_id if doc else None
 
     def _finish(self, doc_id: int, batch_id: int, o: BatchOutcome) -> None:
         with session_scope() as s:

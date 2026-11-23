@@ -12,7 +12,13 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..profiles import ZONE_PRESETS, ProfileSettings, Zone, effective_processing_color
+from ..profiles import (
+    ZONE_PRESETS,
+    ProfileSettings,
+    Zone,
+    effective_clean_background,
+    effective_processing_color,
+)
 from . import imageops as ops
 from .ocr import detect_orientation
 from .qr import QrHit, detect_qr
@@ -33,6 +39,11 @@ class PageEdits(BaseModel):
     bw_threshold: int | None = Field(None, ge=0, le=255)
     denoise: bool | None = None
     sharpen: bool | None = None
+    clean_background: bool | None = None
+
+
+# Bump when the rendering algorithm changes, so cached previews are re-rendered.
+RENDER_VERSION = 2
 
 
 @dataclass
@@ -107,6 +118,10 @@ def finish_page(
         bw_threshold=edits.bw_threshold if edits.bw_threshold is not None else p.bw_threshold,
         denoise=edits.denoise if edits.denoise is not None else p.denoise,
         sharpen=edits.sharpen if edits.sharpen is not None else p.sharpen,
+        clean_background=(
+            edits.clean_background if edits.clean_background is not None else effective_clean_background(profile)
+        ),
+        clean_strength=p.clean_strength,
     )
     return ops.enhance(out, e)
 
@@ -129,3 +144,10 @@ def render_page(
     out = finish_page(oriented, edits, profile)
     ink = ops.ink_coverage(out) if measure_blank else None
     return RenderResult(out, rotate, angle, hits, ink, updates)
+
+
+def measure_ink_fast(raw: np.ndarray, profile: ProfileSettings) -> float:
+    """Blank check right after a page arrives: crop + colour/cleanup on a reduced copy, no
+    orientation/deskew (they don't change the ink fraction). Same measure as the pipeline."""
+    small, _f = ops.scale_to_max(raw, 1400)
+    return ops.ink_coverage(finish_page(small, PageEdits(), profile))

@@ -63,7 +63,13 @@ Tests:
 cd backend && .venv/bin/python -m pytest            # OCR tests skip without tesseract
 docker build --target test -t scanbox:test . && docker run --rm scanbox:test   # full suite incl. OCR
 cd frontend && npm run check && npm test && npm run test:e2e                   # e2e needs the dev stack
+cd frontend && LAYOUT_SCREENSHOTS=1 npx playwright test e2e/layout.spec.ts     # layout audit + screenshots
 ```
+
+The layout audit (`frontend/e2e/layout.spec.ts`) opens every page, menu and dialog at phone, tablet, laptop
+and desktop sizes (German, plus English in dark mode). It fails on overlapping controls, text overflowing
+its button, cut-off navigation labels and horizontal scrolling. Intentional overlays (the checkbox and drag
+handle on page thumbnails) are marked with `data-layout-overlay`.
 
 CI (GitHub Actions) runs lint, the backend suite in the Docker test image, frontend checks, Playwright e2e
 against the app + simulator, and publishes the image to GHCR (`latest`, version, `sha-…`).

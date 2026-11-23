@@ -36,7 +36,7 @@ def resolve_profile(s: Session, profile_id: int | None, user_id: int | None) -> 
     else:
         p = s.get(Profile, profile_id)
     if p is None or (p.owner_id is not None and p.owner_id != user_id):
-        raise DomainError("profile_not_found", "Profil nicht gefunden / profile not found", 404)
+        raise DomainError("profile_not_found", "Profil nicht gefunden", 404)
     return p
 
 
@@ -73,7 +73,7 @@ def create_scan(
     if problems:
         raise DomainError("unsupported_settings", "; ".join(problems), 422)
     if pending_count(s, "scanner") >= ctx.config.max_queued_scans:
-        raise DomainError("queue_full", "Zu viele wartende Scans / too many queued scans", 429)
+        raise DomainError("queue_full", "Zu viele wartende Scans", 429)
     free = ctx.storage.free_mb()
     min_free = int(ctx.settings.get("disk.min_free_mb") or 0)
     if free < min_free:

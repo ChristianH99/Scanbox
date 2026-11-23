@@ -84,7 +84,7 @@
         <button type="button" class="btn btn-ghost btn-icon" onclick={() => remove(i)} aria-label={t('common.remove')}><Icon name="trash" /></button>
       </div>
 
-      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="label" for="dl-{i}">{t('dest.label')}</label>
           <input id="dl-{i}" class="input" bind:value={destinations[i].label} placeholder={t(`dest.${d.type}`)} maxlength="100" />

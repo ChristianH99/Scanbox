@@ -102,6 +102,10 @@ class ProcessingOptions(Model):
     denoise: bool = False
     sharpen: bool = False
     unpaper_clean: bool = False  # unpaper cleaning via OCRmyPDF --clean-final (needs OCR/PDF output)
+    # Whiten the paper (shading, tint, creases, show-through) and edge artefacts.
+    # "auto" = on unless the profile scans photos.
+    clean_background: Literal["auto", "on", "off"] = "auto"
+    clean_strength: float = Field(0.5, ge=0, le=1)
     brightness: float = Field(0.0, ge=-1, le=1)
     contrast: float = Field(0.0, ge=-1, le=1)
     split: SplitOptions = SplitOptions()
@@ -256,6 +260,13 @@ def escl_color_mode(p: ProfileSettings) -> str:
     if p.color_mode == "bw" and p.bw_strategy == "software":
         return "Grayscale8"
     return ESCL_COLOR[p.color_mode]
+
+
+def effective_clean_background(p: ProfileSettings) -> bool:
+    mode = p.processing.clean_background
+    if mode == "auto":
+        return p.intent != "Photo" and p.content_type != "Photo"
+    return mode == "on"
 
 
 def effective_processing_color(p: ProfileSettings) -> str:

@@ -79,8 +79,8 @@ passenden Knöpfen, z. B.:
   bewegen.
 * **Links/Rechts drehen** (90°) für alle ausgewählten Seiten.
 * **Löschen / Wiederherstellen**: Gelöschte Seiten bleiben blass sichtbar und lassen sich zurückholen.
-  Automatisch als **leer** erkannte Seiten sind ebenfalls blass markiert; im Seiteneditor kannst du
-  „Leere Seite trotzdem behalten“ wählen.
+  Leere Seiten werden schon während des Scans erkannt und mit **Leer** markiert (blass). Sie werden beim
+  Abschließen entfernt. Im Seiteneditor kannst du „Leere Seite trotzdem behalten“ wählen.
 * **Teilen**: Seiten auswählen, an denen jeweils ein neues Dokument beginnen soll → *Teilen*.
 * **Seiten einfügen**: Seiten aus einem anderen deiner Dokumente kopieren oder verschieben (werden angehängt).
 * **Zusammenführen**: andere Dokumente an dieses anhängen; die Quelldokumente werden danach verworfen.
@@ -155,7 +155,10 @@ nicht unterstützte Auflösung), zeigt Scanbox das in Gelb an.
   Papierformat, Zweck, Inhalt; erweiterte Scanner-Optionen (Leerseiten, Mehrfacheinzug, Helligkeit …) nur,
   wenn der Scanner sie kann.
 * **Verarbeitung**: automatisch drehen, begradigen, zuschneiden, Leerseiten entfernen (Schwelle), Farbe,
-  Entrauschen/Schärfen, automatisch an QR-Wechsel oder Trennblättern **teilen**.
+  **Hintergrund bereinigen** (macht das Papier reinweiß: entfernt Grauschleier, Knicke, durchscheinende
+  Rückseiten und dunkle Scanränder; *Automatisch* = an, außer bei Foto-Profilen; Stärke einstellbar,
+  im Seiteneditor pro Seite abschaltbar), Entrauschen/Schärfen, automatisch an QR-Wechsel oder
+  Trennblättern **teilen**.
 * **Texterkennung & Ausgabe**: OCR (Deutsch/Englisch), Titelvorschlag, Format (PDF/A, PDF, JPEG, PNG, TIFF,
   Text), Komprimierung, Zielgröße.
 * **Benennung**: Dateinamen-Vorlage mit Platzhaltern zum Antippen – `{date}` `{time}` `{datetime}` `{qr}`

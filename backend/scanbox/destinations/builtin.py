@@ -28,7 +28,7 @@ class DownloadDestination:
         return []
 
     async def deliver(self, job: DeliveryJob, cfg: BaseModel, env: DeliveryEnv) -> DeliveryResult:
-        return DeliveryResult("Zum Download bereit / ready for download", {"files": [a.filename for a in job.artifacts]})
+        return DeliveryResult("Zum Download bereit", {"files": [a.filename for a in job.artifacts]})
 
     async def recover(self, job: DeliveryJob, cfg: BaseModel, env: DeliveryEnv, previous: dict | None) -> RecoverAction:
         return RecoverAction.REDELIVER

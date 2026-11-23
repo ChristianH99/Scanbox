@@ -38,7 +38,7 @@ from ..jobs.queue import enqueue, queue_position
 from ..models import ArtifactRow, Delivery, Document, JobEvent, Page, Task, User
 from ..processing import imageops as ops
 from ..processing.qr import detect_qr, select_hit
-from ..processing.render import PageEdits, render_page
+from ..processing.render import RENDER_VERSION, PageEdits, render_page
 from ..profiles import ZONE_PRESETS, ProfileSettings
 from ..security.auth import Principal
 from .deps import (
@@ -515,7 +515,7 @@ def _render_cached(ctx: AppContext, page: Page, doc: Document, variant: str, siz
                    edits: PageEdits | None) -> tuple[Path, dict]:
     profile = ProfileSettings.model_validate(doc.profile_snapshot)
     e = edits if edits is not None else PageEdits.model_validate(page.edits or {})
-    key_src = json.dumps({"v": variant, "s": size, "e": e.model_dump(), "p": profile.processing.model_dump(),
+    key_src = json.dumps({"r": RENDER_VERSION, "v": variant, "s": size, "e": e.model_dump(), "p": profile.processing.model_dump(),
                           "c": profile.color_mode, "a": {k: v for k, v in (page.analysis or {}).items()
                                                         if k.startswith(("osd", "skew"))}}, sort_keys=True)
     key = hashlib.sha256((page.raw_sha256 + key_src).encode()).hexdigest()[:24]

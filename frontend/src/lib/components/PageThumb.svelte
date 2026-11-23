@@ -40,15 +40,18 @@
       onerror={() => (failed = true)}
     />
   {/if}
-  <span class="absolute bottom-1 left-1 rounded bg-slate-900/75 px-1.5 text-xs font-medium text-white">{index + 1}</span>
+  <!-- bottom-right and top-right are reserved for the grid's drag handle and selection checkbox -->
+  <span class="absolute bottom-1 left-1 flex max-w-[calc(100%-3.5rem)] items-center gap-1">
+    <span class="rounded bg-slate-900/75 px-1.5 text-xs font-medium text-white">{index + 1}</span>
+    {#if page.side === 'back'}
+      <span class="truncate rounded bg-slate-900/60 px-1 text-[10px] text-white">{t('page.back')}</span>
+    {/if}
+  </span>
   {#if page.deleted}
-    <span class="absolute top-1 left-1 chip bg-red-600 text-white">{t('page.deleted')}</span>
+    <span class="absolute top-1 left-1 chip max-w-[calc(100%-3.5rem)] truncate bg-red-600 text-white">{t('page.deleted')}</span>
   {:else if page.is_blank && !page.keep_blank}
-    <span class="absolute top-1 left-1 chip bg-slate-700 text-white">{t('page.blank')}</span>
+    <span class="absolute top-1 left-1 chip max-w-[calc(100%-3.5rem)] truncate bg-slate-700 text-white">{t('page.blank')}</span>
   {:else if page.is_blank && page.keep_blank}
-    <span class="absolute top-1 left-1 chip bg-emerald-700 text-white">{t('page.blank_kept')}</span>
-  {/if}
-  {#if page.side === 'back'}
-    <span class="absolute right-1 bottom-1 rounded bg-slate-900/60 px-1 text-[10px] text-white">{t('page.back')}</span>
+    <span class="absolute top-1 left-1 chip max-w-[calc(100%-3.5rem)] truncate bg-emerald-700 text-white">{t('page.blank_kept')}</span>
   {/if}
 </div>

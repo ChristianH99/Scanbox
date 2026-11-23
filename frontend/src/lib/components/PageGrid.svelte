@@ -105,7 +105,7 @@
 </script>
 
 <p class="sr-only" aria-live="assertive">{liveMsg}</p>
-<ul bind:this={gridEl} class="grid grid-cols-2 gap-3 min-[480px]:grid-cols-3 sm:grid-cols-4 lg:grid-cols-6" aria-label={t('doc.pages')} data-testid="page-grid">
+<ul bind:this={gridEl} class="grid grid-cols-[repeat(auto-fill,minmax(min(9rem,100%),1fr))] gap-3" aria-label={t('doc.pages')} data-testid="page-grid">
   {#each pages as page, i (page.id)}
     {@const isSel = selected.has(page.id)}
     {@const isDragging = !!drag?.moved && drag.ids.includes(page.id)}
@@ -113,6 +113,7 @@
       class="relative rounded-lg p-1 {isSel ? 'bg-brand-100 ring-2 ring-brand-600 dark:bg-brand-800/40' : ''} {isDragging ? 'opacity-40' : ''}"
       data-page-index={i}
       data-page-id={page.id}
+      data-layout-group
     >
       {#if dropIndex === i}
         <span class="absolute inset-y-0 -left-2 w-1 rounded bg-brand-600" aria-hidden="true"></span>
@@ -124,13 +125,14 @@
         <PageThumb {page} index={i} fresh={fresh.has(page.id)} />
       </button>
       {#if editable}
-        <label class="absolute top-1 right-1 flex size-11 cursor-pointer items-center justify-center" title={t('editor.select')}>
+        <label class="absolute top-1 right-1 flex size-11 cursor-pointer items-center justify-center" title={t('editor.select')} data-layout-overlay>
           <input type="checkbox" class="checkbox size-6 bg-white" checked={isSel} onchange={() => toggle(page.id)} aria-label={t('editor.select_page', { n: i + 1 })} />
         </label>
         <button
           type="button"
           class="absolute right-1 bottom-1 flex size-11 cursor-grab touch-none items-center justify-center rounded-md bg-white/90 text-slate-700 shadow active:cursor-grabbing dark:bg-slate-800/90 dark:text-slate-200"
           data-handle={page.id}
+          data-layout-overlay
           aria-label={t('editor.drag_handle', { n: i + 1 })}
           title={t('editor.drag_hint')}
           onpointerdown={(e) => onHandleDown(e, page)}

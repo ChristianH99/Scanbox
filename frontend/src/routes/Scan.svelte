@@ -139,7 +139,7 @@
   const sourceLabel = (s: string) => tMaybe(`source.${s}`, s);
 </script>
 
-<div class="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
   <div class="space-y-4">
     <ScannerStatusCard status={scanner.status} error={scanner.statusError} isAdmin={session.user?.is_admin} />
 
@@ -189,12 +189,12 @@
           {#if overrideCount}<span class="chip bg-brand-100 text-brand-800">{t('scan.changed_n', { n: overrideCount })}</span>{/if}
         </button>
         {#if showOptions}
-          <div class="mt-2 grid gap-3 sm:grid-cols-3">
-            <fieldset>
+          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <fieldset class="min-w-0 sm:col-span-2">
               <legend class="label">{t('scan.sides')}</legend>
-              <div class="flex gap-1">
+              <div class="flex flex-wrap gap-1">
                 {#each sources as s}
-                  <label class="btn btn-sm flex-1 {source === s ? 'btn-primary' : 'btn-secondary'}">
+                  <label class="btn btn-sm min-w-0 flex-1 basis-28 text-center whitespace-normal {source === s ? 'btn-primary' : 'btn-secondary'}">
                     <input type="radio" class="sr-only" name="source" value={s} bind:group={source} />{sourceLabel(s)}
                   </label>
                 {/each}

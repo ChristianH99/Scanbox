@@ -105,7 +105,7 @@
 
       <!-- Live thumbnails -->
       {#if pages.length}
-        <ul class="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6" aria-label={t('doc.pages')} data-testid="live-thumbs">
+        <ul class="grid grid-cols-[repeat(auto-fill,minmax(min(5.5rem,100%),1fr))] gap-2" aria-label={t('doc.pages')} data-testid="live-thumbs">
           {#each pages as p, i (p.id)}
             <li><a href="/documents/{doc.id}" aria-label={t('page.alt', { n: i + 1 })}><PageThumb page={p} index={i} fresh={live.fresh.has(p.id)} /></a></li>
           {/each}
