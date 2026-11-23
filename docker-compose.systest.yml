@@ -1,0 +1,58 @@
+# System test: the real container (image under test) + eSCL simulator + all external services mocked
+# on the network (SMTP, Paperless, OpenID provider, webhook receiver). Driven by tools/systest.sh.
+#
+#   SCANBOX_IMAGE=ghcr.io/christianh99/scanbox:sha-abc1234 tools/systest.sh   # any image
+name: scanbox-systest
+
+services:
+  init-volumes:
+    image: ${SCANBOX_TOOLS_IMAGE:-scanbox:test-tools}
+    user: "0"
+    entrypoint: ["sh", "-c", "chown -R 1000:1000 /output /consume /state"]
+    volumes: [output:/output, consume:/consume, state:/state]
+
+  scanbox:
+    image: ${SCANBOX_IMAGE:-scanbox:dev}
+    depends_on:
+      init-volumes: { condition: service_completed_successfully }
+      escl-sim: { condition: service_started }
+      mocks: { condition: service_started }
+    environment:
+      SCANBOX_SCANNER_URL: http://escl-sim:8090
+      SCANBOX_BASE_URL: http://scanbox:8080
+      SCANBOX_COOKIE_SECURE: "false"
+      SCANBOX_SECRET_KEY: systest-secret-key-0123456789abcdef
+      SCANBOX_ADMIN_PASSWORD: adminadmin
+      SCANBOX_MIN_FREE_MB: "100"
+      SCANBOX_OUTPUT_ROOTS: "Scans=/output"
+      SCANBOX_PAPERLESS_CONSUME_DIR: /consume
+    volumes: [data:/data, output:/output, consume:/consume]
+    ports: ["127.0.0.1:18081:8080"]
+
+  escl-sim:
+    image: ${SCANBOX_SIM_IMAGE:-scanbox-escl-sim:dev}
+    build: ./tools/escl-sim
+
+  mocks:
+    image: ${SCANBOX_TOOLS_IMAGE:-scanbox:test-tools}
+    working_dir: /src/backend
+    command: ["python", "-m", "tests.mocks.servers"]
+
+  systest:
+    image: ${SCANBOX_TOOLS_IMAGE:-scanbox:test-tools}
+    profiles: ["run"]
+    working_dir: /src/backend
+    environment:
+      SCANBOX_URL: http://scanbox:8080
+      SIM_URL: http://escl-sim:8090
+      MOCKS_URL: http://mocks:9000
+      PAPERLESS_URL: http://mocks:8000
+      SYSTEST_STATE: /state/state.json
+    volumes: [output:/output:ro, consume:/consume:ro, state:/state, ./backend/systest:/src/backend/systest:ro]
+    entrypoint: ["python", "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-o", "timeout=900", "systest"]
+
+volumes:
+  data:
+  output:
+  consume:
+  state:

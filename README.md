@@ -64,7 +64,17 @@ cd backend && .venv/bin/python -m pytest            # OCR tests skip without tes
 docker build --target test -t scanbox:test . && docker run --rm scanbox:test   # full suite incl. OCR
 cd frontend && npm run check && npm test && npm run test:e2e                   # e2e needs the dev stack
 cd frontend && LAYOUT_SCREENSHOTS=1 npx playwright test e2e/layout.spec.ts     # layout audit + screenshots
+docker build --target test -t scanbox:test-tools . && tools/systest.sh         # system test of scanbox:dev
+SCANBOX_IMAGE=ghcr.io/<owner>/scanbox:latest tools/systest.sh                 # … of any image
 ```
+
+The **system test** (`backend/systest/`, `tools/systest.sh`, `docker-compose.systest.yml`) runs the real
+container with every external service on the network: eSCL simulator with fault injection, SMTP, Paperless
+(API and consume folder), an OpenID provider and a webhook receiver (`backend/tests/mocks/servers.py`). It
+covers login/CSRF/tokens/rate limit, admin settings and connection tests, real OCR → PDF/A, every scanner
+fault, editing, splitting, all output formats and destinations, SSO roles and per-user isolation. It ends by
+killing the app with SIGKILL while a scan and an OCR job are running, then checks the recovery: pages kept,
+processing resumed, no duplicate delivery.
 
 The layout audit (`frontend/e2e/layout.spec.ts`) opens every page, menu and dialog at phone, tablet, laptop
 and desktop sizes (German, plus English in dark mode). It fails on overlapping controls, text overflowing
@@ -72,7 +82,9 @@ its button, cut-off navigation labels and horizontal scrolling. Intentional over
 handle on page thumbnails) are marked with `data-layout-overlay`.
 
 CI (GitHub Actions) runs lint, the backend suite in the Docker test image, frontend checks, Playwright e2e
-against the app + simulator, and publishes the image to GHCR (`latest`, version, `sha-…`).
+against the app + simulator and the system test, then publishes the image to GHCR (`latest`, version,
+`sha-…`). Afterwards, `verify-published` pulls the image *as published* (by digest), checks that its revision
+label matches the commit, and runs the system test and the browser tests against it again.
 
 ## Documentation
 
