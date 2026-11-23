@@ -140,7 +140,11 @@ def create_app(
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, e: RequestValidationError) -> JSONResponse:
         msg = "; ".join(f"{'.'.join(str(x) for x in err['loc'][1:])}: {err['msg']}" for err in e.errors()[:10])
-        return JSONResponse({"detail": {"code": "validation_error", "message": msg, "errors": e.errors()[:20]}},
+        # Only plain fields: 'ctx' can hold the raising exception object (not JSON-serialisable → was a 500),
+        # and 'input' would echo submitted values (secrets) back.
+        errors = [{"type": err.get("type"), "loc": list(err.get("loc", ())), "msg": err.get("msg")}
+                  for err in e.errors()[:20]]
+        return JSONResponse({"detail": {"code": "validation_error", "message": msg, "errors": errors}},
                             status_code=422)
 
     @app.exception_handler(HTTPException)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..processing.render import PageEdits
 from ..profiles import ProfileSettings, Zone
@@ -235,6 +235,7 @@ class DocumentSummary(ORM):
     updated_at: datetime
     finished_at: datetime | None
     inbox_expires_at: datetime | None
+    parent_id: int | None = Field(None, description="Set on documents created by splitting another one")
     destinations: list[str] = []
     first_page_id: str | None = Field(None, description="For list thumbnails (null when originals expired)")
 
@@ -274,12 +275,24 @@ class ScanIn(BaseModel):
 
 class DocumentPatch(BaseModel):
     title: str | None = Field(None, max_length=300)
-    document_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    document_date: str | None = Field(None, pattern=r"^(\d{4}-\d{2}-\d{2})?$", description="YYYY-MM-DD; empty string clears")
     qr_value: str | None = Field(None, max_length=500, description="Manual QR value; empty string = 'no QR'")
     clear_manual_qr: bool = False
     add_qr_to_filename: bool | None = None
     profile_id: int | None = Field(None, description="Switch profile (re-snapshots settings)")
     settings: ProfileSettings | None = Field(None, description="Replace this document's settings snapshot")
+
+    @field_validator("document_date")
+    @classmethod
+    def _real_date(cls, v: str | None) -> str | None:
+        if v:
+            import datetime as _dt
+
+            try:
+                _dt.date.fromisoformat(v)
+            except ValueError as e:
+                raise ValueError("not a valid date") from e
+        return v
 
 
 class ReorderIn(BaseModel):

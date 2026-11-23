@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -179,12 +179,25 @@ def diagnostics(s: Session = Depends(get_session), ctx: AppContext = CtxDep) -> 
     )
 
 
+LOG_DOWNLOAD_MAX = 5 * 1024 * 1024
+
+
 @router.get("/logs", responses={200: {"content": {"text/plain": {}}}})
-def download_logs(ctx: AppContext = CtxDep) -> FileResponse:
+def download_logs(ctx: AppContext = CtxDep) -> Response:
+    """Snapshot of the newest log lines (≤ 5 MB). Not streamed: the file grows while the app logs –
+    even this very request – and a streamed file would outgrow its Content-Length."""
     path = ctx.config.log_dir / "scanbox.log"
     if not path.exists():
         raise HTTPException(404, detail={"code": "no_logs", "message": "Keine Logdatei"})
-    return FileResponse(path, media_type="text/plain", filename="scanbox.log")
+    with path.open("rb") as f:
+        size = f.seek(0, 2)
+        start = max(0, size - LOG_DOWNLOAD_MAX)
+        f.seek(start)
+        data = f.read(size - start)
+    if start:
+        data = data[data.find(b"\n") + 1:]  # begin at a complete line
+    return Response(data, media_type="text/plain; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="scanbox.log"'})
 
 
 # ------------------------------------------------------------------ tests

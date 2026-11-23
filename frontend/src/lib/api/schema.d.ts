@@ -830,7 +830,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Logs */
+        /**
+         * Download Logs
+         * @description Snapshot of the newest log lines (≤ 5 MB). Not streamed: the file grows while the app logs –
+         *     even this very request – and a streamed file would outgrow its Content-Length.
+         */
         get: operations["download_logs_api_admin_logs_get"];
         put?: never;
         post?: never;
@@ -1290,6 +1294,11 @@ export interface components {
             /** Inbox Expires At */
             inbox_expires_at: string | null;
             /**
+             * Parent Id
+             * @description Set on documents created by splitting another one
+             */
+            parent_id?: number | null;
+            /**
              * Destinations
              * @default []
              */
@@ -1345,7 +1354,10 @@ export interface components {
         DocumentPatch: {
             /** Title */
             title?: string | null;
-            /** Document Date */
+            /**
+             * Document Date
+             * @description YYYY-MM-DD; empty string clears
+             */
             document_date?: string | null;
             /**
              * Qr Value
@@ -1414,6 +1426,11 @@ export interface components {
             finished_at: string | null;
             /** Inbox Expires At */
             inbox_expires_at: string | null;
+            /**
+             * Parent Id
+             * @description Set on documents created by splitting another one
+             */
+            parent_id?: number | null;
             /**
              * Destinations
              * @default []

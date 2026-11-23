@@ -48,6 +48,11 @@ class ProcessingBlocked(Exception):
         self.message = message
 
 
+# QR values processing must not re-detect: set by the user, confirmed absent, or inherited from the
+# separator sheet that started a split-off document (the separator page itself is no longer in it).
+FIXED_QR_SOURCES = ("manual", "none", "separator")
+
+
 @dataclass
 class PageInput:
     id: str
@@ -78,6 +83,7 @@ class ProcessResult:
     ocr_text: str = ""
     qr_value: str | None = None
     qr_page_id: str | None = None
+    qr_from_separator: bool = False
     warnings: list[tuple[str, str]] = field(default_factory=list)
     kept_pages: int = 0
 
@@ -175,7 +181,7 @@ class Processor:
                 st.transition(s, doc, st.NEEDS_ATTENTION, code="process.no_pages", level="error",
                               message="Dokument hat keine Seiten", error_code="no_pages")
                 return None
-            manual_qr = doc.qr_value if doc.qr_source in ("manual", "none") else None
+            manual_qr = doc.qr_value if doc.qr_source in FIXED_QR_SOURCES else None
             st.add_event(s, doc, "process.started", f"Lauf {run}, {len(inputs)} Seite(n)")
             return profile, inputs, manual_qr, doc.qr_source
 
@@ -218,7 +224,7 @@ class Processor:
         qr_source: str | None,
     ) -> ProcessResult:
         res = ProcessResult()
-        need_qr = profile.qr.enabled and qr_source not in ("manual", "none")
+        need_qr = profile.qr.enabled and qr_source not in FIXED_QR_SOURCES
         outputs: list[PageOutput] = []
         owner = await run_db(self._owner, doc_id)
         for p in inputs:
@@ -235,11 +241,19 @@ class Processor:
                 audience=owner,
             )
 
+        # Split at separator sheets first (creates child documents for the following segments): the
+        # QR value of this document then comes from its own segment / the separator that started it.
+        segment_qr: str | None = None
+        if profile.processing.split.mode != "off":
+            outputs, segment_qr = await self._split(doc_id, profile, outputs)
+
         # QR value
-        if qr_source == "manual":
+        if qr_source in ("manual", "separator"):
             res.qr_value = manual_qr
         elif qr_source == "none":
             res.qr_value = None
+        elif segment_qr is not None:
+            res.qr_value, res.qr_from_separator = segment_qr, True
         elif profile.qr.enabled:
             hit = decide_qr(profile, outputs)
             if hit is not None:
@@ -248,10 +262,6 @@ class Processor:
                 raise ProcessingBlocked("qr_missing", "Kein QR-Code gefunden – bitte Wert eingeben oder bestätigen")
             elif profile.qr.on_missing == "warn":
                 res.warnings.append(("qr.missing", "Kein QR-Code im Suchbereich gefunden"))
-
-        # Split at separator sheets (creates child documents for the following segments).
-        if profile.processing.split.mode != "off":
-            outputs = await self._split(doc_id, profile, outputs)
 
         # Blank pages (the QR page is never dropped)
         keep_blank = {p.id for p in inputs if p.keep_blank}
@@ -266,10 +276,13 @@ class Processor:
         await self._assemble(doc_id, run, profile, kept, run_dir, res)
         return res
 
-    async def _split(self, doc_id: int, profile: ProfileSettings, outputs: list[PageOutput]) -> list[PageOutput]:
+    async def _split(self, doc_id: int, profile: ProfileSettings,
+                     outputs: list[PageOutput]) -> tuple[list[PageOutput], str | None]:
+        """Returns (pages that stay in this document, QR value that started its segment)."""
         opts = profile.processing.split
         rx = re.compile(opts.pattern) if opts.mode == "qr_pattern" and opts.pattern else None
         segments: list[list[PageOutput]] = [[]]
+        seg_values: list[str | None] = [None]  # the separator / QR value that started each segment
         current: str | None = None
         for o in outputs:
             values = [h.value for h in o.qr_hits]
@@ -278,6 +291,8 @@ class Processor:
                 if sep is not None:
                     if segments[-1]:
                         segments.append([])
+                        seg_values.append(None)
+                    seg_values[-1] = sep
                     if not opts.remove_separator:
                         segments[-1].append(o)
                     continue
@@ -287,16 +302,21 @@ class Processor:
                 if hit is not None:
                     if current is not None and hit.value != current and segments[-1]:
                         segments.append([])
+                        seg_values.append(None)
+                    if seg_values[-1] is None:
+                        seg_values[-1] = hit.value
                     current = hit.value
             segments[-1].append(o)
-        segments = [seg for seg in segments if seg]
-        if len(segments) <= 1:
-            return segments[0] if segments else outputs
+        pairs = [(seg, v) for seg, v in zip(segments, seg_values, strict=True) if seg]
+        if len(pairs) <= 1:
+            return (pairs[0][0], pairs[0][1]) if pairs else (outputs, None)
+        segments = [seg for seg, _ in pairs]
         from ..documents import split_into_children
 
         def _db() -> None:
             with session_scope() as s:
-                children = split_into_children(s, doc_id, [[o.id for o in seg] for seg in segments[1:]])
+                children = split_into_children(s, doc_id, [[o.id for o in seg] for seg in segments[1:]],
+                                               qr_values=[v for _, v in pairs[1:]])
                 dropped = {o.id for o in outputs} - {o.id for seg in segments for o in seg}
                 if dropped:
                     for pid in dropped:
@@ -309,7 +329,7 @@ class Processor:
                              data={"children": children})
 
         await run_db(_db)
-        return segments[0]
+        return pairs[0][0], pairs[0][1]
 
     async def _assemble(
         self, doc_id: int, run: int, profile: ProfileSettings, kept: list[PageOutput], run_dir: Path,
@@ -431,8 +451,9 @@ class Processor:
                 log.info("process.stale_run")
                 return
             doc.qr_value = res.qr_value
-            if doc.qr_source not in ("manual", "none"):
-                doc.qr_source = "auto" if res.qr_value else None
+            if doc.qr_source not in FIXED_QR_SOURCES:
+                # a separator's value is kept for re-processing: the separator page is gone by then
+                doc.qr_source = "separator" if res.qr_from_separator else ("auto" if res.qr_value else None)
             doc.qr_page_id = res.qr_page_id
             if res.ocr_text:
                 doc.ocr_text = res.ocr_text[:2_000_000]

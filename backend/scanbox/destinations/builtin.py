@@ -10,10 +10,15 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..filenames import sanitize_subpath, unique_path
+from ..filenames import (
+    TemplateVars,
+    render_filename_template,
+    sanitize_component,
+    sanitize_subpath,
+    unique_path,
+)
 from ..storage import UnsafePath, exclusive_atomic_copy, safe_join, sha256_file
 from .base import DeliveryEnv, DeliveryError, DeliveryJob, DeliveryResult, RecoverAction
-from .templating import render_template
 
 _WRITE_LOCK = threading.Lock()
 
@@ -41,6 +46,33 @@ class FolderConfig(BaseModel):
     include_text: bool = False
 
 
+def render_subfolder(template: str, v: TemplateVars) -> str:
+    """Subfolder template → relative path (not yet sanitised). Same tokens as file names, per path
+    component (``{user}/{date:%Y}/{qr}``); ``{year}`` and ``{month}`` are shorthands."""
+    t = (template or "").replace("{year}", "{date:%Y}").replace("{month}", "{date:%m}")
+    parts = []
+    for part in t.split("/"):
+        if part.strip() == "..":
+            raise ValueError("sub-folder must not contain '..'")
+        # values (e.g. a QR code with '/') are sanitised per component: they can't add levels
+        seg = sanitize_component(render_filename_template(part, v), 100) if "{" in part else part
+        if seg:
+            parts.append(seg)
+    return "/".join(parts)
+
+
+def check_subfolder(template: str) -> list[str]:
+    from datetime import datetime
+
+    sample = TemplateVars(created=datetime(2026, 1, 31, 12, 0), qr="QR-1", title="Titel", profile="Profil",
+                          user="user", pages=1)
+    try:
+        sanitize_subpath(render_subfolder(template, sample))
+    except ValueError as e:
+        return [f"Ungültiger Unterordner: {e}"]
+    return []
+
+
 class FolderDestination:
     type: ClassVar[str] = "folder"
     Config = FolderConfig
@@ -56,11 +88,10 @@ class FolderDestination:
         root = Path(roots[cfg.root])
         if not root.is_dir():
             raise DeliveryError("folder_root_missing", f"Ausgabeordner {cfg.root} ist nicht eingehängt", retryable=True)
-        vars_ = job.template_vars()
-        vars_["year"] = job.created_at.strftime("%Y")
-        vars_["month"] = job.created_at.strftime("%m")
-        sub = render_template(cfg.subfolder or "", vars_)
         try:
+            sub = render_subfolder(cfg.subfolder, TemplateVars(
+                created=job.created_at, qr=job.qr_value, title=job.title, profile=job.profile_name,
+                user=job.user_display_name or job.username, pages=job.page_count))
             rel = sanitize_subpath(sub)
             return safe_join(root, *rel.parts) if rel.parts else root.resolve()
         except (ValueError, UnsafePath) as e:
@@ -71,11 +102,7 @@ class FolderDestination:
         roots = self._roots(env)
         if cfg.root not in roots:
             return [f"Ausgabeordner '{cfg.root}' unbekannt (verfügbar: {', '.join(roots) or '–'})"]
-        try:
-            sanitize_subpath(cfg.subfolder.replace("{", "").replace("}", ""))
-        except ValueError as e:
-            return [str(e)]
-        return []
+        return check_subfolder(cfg.subfolder)
 
     async def deliver(self, job: DeliveryJob, cfg: BaseModel, env: DeliveryEnv) -> DeliveryResult:
         assert isinstance(cfg, FolderConfig)

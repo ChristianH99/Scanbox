@@ -323,6 +323,7 @@ export const de = {
   'qr.no_value': 'Kein QR-Wert.',
   'qr.source_auto': 'erkannt',
   'qr.source_manual': 'manuell',
+  'qr.source_separator': 'vom Trennblatt',
   'qr.source_none': 'bestätigt: kein QR',
   'qr.source_unset': 'noch nicht erkannt',
   'qr.value': 'QR-Wert',

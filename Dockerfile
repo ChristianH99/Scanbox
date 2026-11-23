@@ -45,7 +45,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1000 scanbox && useradd --uid 1000 --gid 1000 --home-dir /data --no-create-home scanbox \
- && mkdir -p /data && chown scanbox:scanbox /data
+ && mkdir -p /data /output && chown scanbox:scanbox /data /output
 
 COPY --from=pydeps /opt/venv /opt/venv
 

@@ -116,6 +116,33 @@ def _out(p: Profile, ctx: AppContext) -> ProfileOut:
                       problems=validate_against_caps(ps, ctx.scanner.capabilities if ctx.scanner else None))
 
 
+def _check_destinations(ps: ProfileSettings, ctx: AppContext) -> None:
+    """Reject destination configs that can never work (wrong fields, unknown output folder, bad
+    sub-folder template) when the profile is saved – not only when a scan is delivered. Things that
+    may become valid later (SMTP not yet configured, Paperless offline) are checked at delivery."""
+    from pydantic import ValidationError
+
+    from ..destinations.builtin import FolderConfig, check_subfolder
+    from ..destinations.service import REGISTRY
+
+    roots = ctx.settings.get("output.roots") or {}
+    errors: list[str] = []
+    for i, d in enumerate(ps.destinations, 1):
+        plugin = REGISTRY.get(d.type)
+        try:
+            cfg = plugin.Config.model_validate(d.config or {}) if plugin is not None else None
+        except ValidationError as e:
+            errors.append(f"Ziel {i} ({d.type}): " + "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}"
+                                                               for x in e.errors()))
+            continue
+        if isinstance(cfg, FolderConfig):
+            if cfg.root not in roots:
+                errors.append(f"Ziel {i}: Ausgabeordner '{cfg.root}' unbekannt (verfügbar: {', '.join(roots) or '–'})")
+            errors += [f"Ziel {i}: {m}" for m in check_subfolder(cfg.subfolder)]
+    if errors:
+        raise HTTPException(422, detail={"code": "invalid_destination", "message": " · ".join(errors)})
+
+
 def _get_profile(s: Session, profile_id: int, p: Principal, *, write: bool) -> Profile:
     prof = s.get(Profile, profile_id)
     if prof is None or (prof.owner_id is not None and prof.owner_id != p.id):
@@ -137,6 +164,7 @@ def create_profile(body: ProfileIn, shared: bool = False, s: Session = Depends(g
                    p: Principal = PrincipalDep) -> ProfileOut:
     if shared and not p.is_admin:
         raise HTTPException(403, detail={"code": "forbidden", "message": "Nur Admins dürfen geteilte Profile anlegen"})
+    _check_destinations(body.settings, ctx)
     prof = Profile(owner_id=None if shared else p.id, name=body.name.strip(), description=body.description,
                    settings=body.settings.model_dump())
     s.add(prof)
@@ -154,6 +182,7 @@ def get_profile(profile_id: int, s: Session = Depends(get_session), ctx: AppCont
 def update_profile(profile_id: int, body: ProfileIn, s: Session = Depends(get_session), ctx: AppContext = CtxDep,
                    p: Principal = PrincipalDep) -> ProfileOut:
     prof = _get_profile(s, profile_id, p, write=True)
+    _check_destinations(body.settings, ctx)
     prof.name = body.name.strip()
     prof.description = body.description
     prof.settings = body.settings.model_dump()

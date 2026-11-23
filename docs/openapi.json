@@ -2885,6 +2885,7 @@
           "admin"
         ],
         "summary": "Download Logs",
+        "description": "Snapshot of the newest log lines (≤ 5 MB). Not streamed: the file grows while the app logs –\neven this very request – and a streamed file would outgrow its Content-Length.",
         "operationId": "download_logs_api_admin_logs_get",
         "responses": {
           "200": {
@@ -3946,6 +3947,18 @@
             ],
             "title": "Inbox Expires At"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id",
+            "description": "Set on documents created by splitting another one"
+          },
           "destinations": {
             "items": {
               "type": "string"
@@ -4157,13 +4170,14 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Document Date"
+            "title": "Document Date",
+            "description": "YYYY-MM-DD; empty string clears"
           },
           "qr_value": {
             "anyOf": [
@@ -4366,6 +4380,18 @@
               }
             ],
             "title": "Inbox Expires At"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id",
+            "description": "Set on documents created by splitting another one"
           },
           "destinations": {
             "items": {

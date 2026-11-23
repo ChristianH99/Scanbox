@@ -311,6 +311,7 @@ export const en: Record<MessageKey, string> = {
   'qr.no_value': 'No QR value.',
   'qr.source_auto': 'detected',
   'qr.source_manual': 'manual',
+  'qr.source_separator': 'from separator sheet',
   'qr.source_none': 'confirmed: no QR',
   'qr.source_unset': 'not detected yet',
   'qr.value': 'QR value',

@@ -80,6 +80,12 @@
     }
   }
 
+  /** Title/date typed but not saved yet are saved before processing, so "Abschließen" never drops them. */
+  async function withPendingDetails(fn: () => Promise<DocumentDetail | void>): Promise<DocumentDetail | void> {
+    if (doc && titleDirty) await docApi.patch(id, { title: title.trim(), document_date: docDate || '' });
+    return fn();
+  }
+
   async function claim() {
     busy = 'claim';
     try {
@@ -253,7 +259,7 @@
           </button>
         {/if}
         {#if canFinish}
-          <button type="button" class="btn btn-primary btn-lg" disabled={!!busy} onclick={() => act('finish', () => docApi.finish(id), t('doc.finish_started'))} data-testid="doc-finish">
+          <button type="button" class="btn btn-primary btn-lg" disabled={!!busy} onclick={() => act('finish', () => withPendingDetails(() => docApi.finish(id)), t('doc.finish_started'))} data-testid="doc-finish">
             {#if busy === 'finish'}<Icon name="loader" />{:else}<Icon name={doc.status === 'done' ? 'refresh' : 'check'} />{/if}
             {doc.status === 'done' ? t('doc.reprocess') : t('scan.finish')}
           </button>
@@ -267,7 +273,7 @@
           <a class="btn btn-secondary btn-lg" href={downloadUrl(id)} download data-testid="doc-download"><Icon name="download" />{t('doc.download')}</a>
         {/if}
         {#if ['done', 'needs_attention'].includes(doc.status)}
-          <button type="button" class="btn btn-secondary btn-lg" disabled={!!busy} onclick={() => act('resend', () => docApi.resend(id), t('doc.resend_started'))}>
+          <button type="button" class="btn btn-secondary btn-lg" disabled={!!busy} onclick={() => act('resend', () => withPendingDetails(() => docApi.resend(id)), t('doc.resend_started'))}>
             <Icon name="send" />{t('doc.resend')}
           </button>
         {/if}

@@ -205,12 +205,16 @@ def _delete_raw_if_unreferenced(s: Session, ctx, page: Page) -> None:  # noqa: A
         ctx.storage.abs(page.raw_path).unlink(missing_ok=True)
 
 
-def split_into_children(s: Session, parent_id: int, groups: list[list[str]], *, process: bool = True) -> list[int]:
-    """Move page groups into new child documents (same owner/profile). Returns child ids."""
+def split_into_children(s: Session, parent_id: int, groups: list[list[str]], *, process: bool = True,
+                        qr_values: list[str | None] | None = None) -> list[int]:
+    """Move page groups into new child documents (same owner/profile). Returns child ids.
+
+    ``qr_values``: per group, the QR value of the separator that started it (automatic split)."""
     parent = s.get(Document, parent_id)
     assert parent is not None
     children: list[int] = []
-    for group in groups:
+    for i, group in enumerate(groups):
+        qr = qr_values[i] if qr_values and i < len(qr_values) else None
         child = Document(
             owner_id=parent.owner_id,
             origin=parent.origin,
@@ -223,6 +227,8 @@ def split_into_children(s: Session, parent_id: int, groups: list[list[str]], *, 
             created_at=parent.created_at,
             webhook_url=parent.webhook_url,
             inbox_expires_at=parent.inbox_expires_at,
+            qr_value=qr,
+            qr_source="separator" if qr else None,
         )
         s.add(child)
         s.flush()

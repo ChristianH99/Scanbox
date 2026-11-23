@@ -172,7 +172,9 @@ Pro Profil beliebig viele Ziele, die beim Abschließen beliefert werden:
 
 * **Download** – Datei steht in Scanbox bereit.
 * **NAS-Ordner** – Ausgabeordner (vom Admin angelegt) + optionaler Unterordner mit Platzhaltern,
-  z. B. `{user}/{date:%Y}`. Bestehende Dateien werden nie überschrieben (`Name (2).pdf`).
+  z. B. `{user}/{date:%Y}` oder `{year}/{month}/{qr}`. Es gibt dieselben Platzhalter wie beim Dateinamen;
+  Werte mit `/` legen keine zusätzlichen Ebenen an. Bestehende Dateien werden nie überschrieben (`Name (2).pdf`).
+  Ein unbekannter Ausgabeordner oder ein ungültiger Unterordner wird schon beim Speichern des Profils abgelehnt.
 * **E-Mail** – Empfänger aus dem **Adressbuch** (Einstellungen) oder frei eingegeben, Betreff/Text-Vorlagen,
   Verhalten bei zu großen Anhängen (komprimieren, aufteilen, Fehler).
 * **Paperless-ngx** – per API (Titel, Tags, Korrespondent, Dokumenttyp, QR → ASN) oder Consume-Ordner.

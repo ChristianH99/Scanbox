@@ -68,7 +68,8 @@
   }
 
   const sourceLabel = (s: string | null) =>
-    s === 'manual' ? t('qr.source_manual') : s === 'none' ? t('qr.source_none') : s ? t('qr.source_auto') : t('qr.source_unset');
+    s === 'manual' ? t('qr.source_manual') : s === 'none' ? t('qr.source_none') : s === 'separator' ? t('qr.source_separator')
+      : s ? t('qr.source_auto') : t('qr.source_unset');
 </script>
 
 <section class="card space-y-3 p-4" id="qr" data-testid="qr-panel">

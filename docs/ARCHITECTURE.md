@@ -239,7 +239,9 @@ Preview renders are cached by a key that includes `RENDER_VERSION` (bump it when
 
 Then, per document:
 
-9. **Split** (optional) at separator pages (QR value change / QR pattern match) → child documents.
+9. **Split** (optional) at separator pages (QR value change / QR pattern match) → child documents. Each part
+   carries the QR value of the separator that started it (`qr_source = separator`, kept on re-processing even
+   though the removed separator page is gone); the first part stays in the original document.
 10. **Assemble**: `img2pdf` (lossless for JPEG) or Pillow for PNG/TIFF.
 11. **OCR**: `ocrmypdf --output-type pdfa|pdf -l deu+eng --jobs N --optimize 1..3`, run under `nice`. Text sidecar → `documents.ocr_text` → FTS.
 12. **Compression**: OCRmyPDF `--optimize`, plus Ghostscript re-render for target size (`/ebook`, `/screen`) if needed.
