@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -11,9 +13,10 @@ import structlog
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import Depends, HTTPException, Request, Response
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from ..config import AppConfig
 from ..db import get_session, session_scope, utcnow
 from ..models import ApiToken, SessionRow, User
 from .crypto import constant_time_eq, random_token, sha256_hex
@@ -94,6 +97,10 @@ class LoginRateLimiter:
 
 
 login_limiter = LoginRateLimiter()
+# Setup-code attempts: few per IP, and a global cap so a forged/rotating IP cannot brute-force the code.
+setup_limiter = LoginRateLimiter(per_user=10, per_ip=10, per_name=30)
+
+MIN_PASSWORD_LENGTH = 8
 
 
 # ------------------------------------------------------------------ local admin
@@ -101,7 +108,7 @@ def ensure_local_admin(username: str, password: str | None) -> None:
     """Create/update the local admin from env. Password is re-hashed only if it changed."""
     if not password:
         return
-    if len(password) < 8:
+    if len(password) < MIN_PASSWORD_LENGTH:
         log.error("auth.admin_password_too_short")
         return
     with session_scope() as s:
@@ -122,6 +129,52 @@ def ensure_local_admin(username: str, password: str | None) -> None:
         if not verify_password(u.password_hash, password):
             u.password_hash = hash_password(password)
             log.info("auth.local_admin_password_updated", username=username)
+
+
+def admin_password_locked(config: AppConfig) -> bool:
+    """The local admin's password comes from the environment: no setup page, no change in the app."""
+    return bool(config.resolved_admin_password())
+
+
+def local_admin_exists(s: Session) -> bool:
+    return s.scalar(select(func.count(User.id)).where(
+        User.is_local.is_(True), User.is_admin.is_(True), User.password_hash.is_not(None))) > 0
+
+
+# ------------------------------------------------------------------ first-start setup
+# Without a configured admin password, the first start writes a one-time code to the container log.
+# Whoever can read that log (the same people who could read a password file) claims the admin account.
+_SETUP_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
+setup_lock = threading.Lock()
+
+
+def generate_setup_code() -> str:
+    raw = "".join(secrets.choice(_SETUP_ALPHABET) for _ in range(12))  # 60 bits
+    return "-".join(raw[i:i + 4] for i in range(0, 12, 4))
+
+
+def normalize_setup_code(code: str) -> str:
+    return "".join(ch for ch in code.upper() if ch.isalnum())
+
+
+def check_setup_code(expected: str | None, given: str) -> bool:
+    if not expected:
+        return False
+    return constant_time_eq(normalize_setup_code(expected), normalize_setup_code(given))
+
+
+def init_setup(config: AppConfig) -> str | None:
+    """Return a fresh setup code if setup is pending, else None. A new code is made on every start."""
+    if admin_password_locked(config):
+        return None
+    with session_scope() as s:
+        if local_admin_exists(s):
+            return None
+    code = generate_setup_code()
+    log.warning("auth.setup_required", setup_code=code,
+                message=f"No admin account yet. Open Scanbox in the browser and enter the setup code {code}. "
+                        "The code is valid until setup is completed or the container restarts.")
+    return code
 
 
 # ------------------------------------------------------------------ sessions
@@ -160,6 +213,13 @@ def clear_session_cookies(response: Response, secure: bool) -> None:
 def delete_session(s: Session, raw: str | None) -> None:
     if raw:
         s.execute(delete(SessionRow).where(SessionRow.id == sha256_hex(raw)))
+
+
+def delete_other_sessions(s: Session, user_id: int, keep_sid: str | None) -> int:
+    q = delete(SessionRow).where(SessionRow.user_id == user_id)
+    if keep_sid:
+        q = q.where(SessionRow.id != keep_sid)
+    return s.execute(q).rowcount or 0
 
 
 def purge_expired_sessions() -> None:

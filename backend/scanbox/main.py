@@ -73,9 +73,10 @@ def create_app(
         engine = init_engine(config.db_path)
         await asyncio.to_thread(upgrade, engine)
         seed_builtin_profiles()
-        from .security.auth import ensure_local_admin, purge_expired_sessions
+        from .security.auth import ensure_local_admin, init_setup, purge_expired_sessions
 
         ensure_local_admin(config.admin_username, config.resolved_admin_password())
+        ctx.setup_code = init_setup(config)
         purge_expired_sessions()
 
         from .jobs.worker import Worker, recover_on_startup

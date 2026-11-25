@@ -41,12 +41,28 @@ class UserOut(ORM):
 class MeOut(BaseModel):
     user: UserOut
     csrf_token: str | None = None
+    # False for SSO accounts and for an admin whose password is set by SCANBOX_ADMIN_PASSWORD(_FILE).
+    can_change_password: bool = False
 
 
 class AuthConfigOut(BaseModel):
     oidc_enabled: bool
     oidc_label: str
     local_login: bool = True
+    # No admin account yet: the login page shows the first-start setup (needs the code from the container log).
+    setup_required: bool = False
+    default_admin_username: str = "admin"
+
+
+class SetupIn(BaseModel):
+    code: str = Field(..., min_length=1, max_length=50)
+    username: str = Field(..., min_length=1, max_length=150, pattern=r"^[A-Za-z0-9._@-]+$")
+    password: str = Field(..., min_length=8, max_length=500)
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=500)
+    new_password: str = Field(..., min_length=8, max_length=500)
 
 
 class LoginIn(BaseModel):

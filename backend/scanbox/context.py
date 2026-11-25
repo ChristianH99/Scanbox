@@ -36,6 +36,8 @@ class AppContext:
     scanner: ScannerService | None = None
     worker: Worker | None = None
     walkup: WalkupService | None = None
+    # One-time code for first-start setup (only in memory: a restart invalidates it). None = setup closed.
+    setup_code: str | None = None
 
 
 _ctx: AppContext | None = None

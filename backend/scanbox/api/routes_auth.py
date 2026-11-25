@@ -1,4 +1,4 @@
-"""Authentication endpoints: local login, OIDC, logout, me."""
+"""Authentication endpoints: first-start setup, local login, password change, OIDC, logout, me."""
 
 from __future__ import annotations
 
@@ -14,7 +14,16 @@ from ..models import User
 from ..security import auth
 from ..security.oidc import STATE_COOKIE, OidcClient, OidcError, is_admin_from_claims, settings_from_store
 from .deps import CtxDep, PrincipalDep
-from .schemas import AuthConfigOut, ErrorResponse, LoginIn, MeOut, UserOut, UserPrefsIn
+from .schemas import (
+    AuthConfigOut,
+    ErrorResponse,
+    LoginIn,
+    MeOut,
+    PasswordChangeIn,
+    SetupIn,
+    UserOut,
+    UserPrefsIn,
+)
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -34,10 +43,66 @@ def reset_oidc_client() -> None:
     _oidc_client = None
 
 
+def can_change_password(ctx: AppContext, user: User) -> bool:
+    if not user.is_local or not user.password_hash:
+        return False
+    # The env-managed admin is locked like every other setting given in the environment.
+    return not (auth.admin_password_locked(ctx.config) and user.username == ctx.config.admin_username)
+
+
+def me_out(ctx: AppContext, user: User, csrf: str | None) -> MeOut:
+    return MeOut(user=UserOut.model_validate(user), csrf_token=csrf, can_change_password=can_change_password(ctx, user))
+
+
+def _rate_limited(wait: float) -> HTTPException:
+    return HTTPException(429, detail={"code": "rate_limited",
+                                      "message": f"Zu viele Versuche – bitte {int(wait // 60) + 1} min warten"},
+                         headers={"Retry-After": str(int(wait))})
+
+
 @router.get("/config", response_model=AuthConfigOut)
 def auth_config(ctx: AppContext = CtxDep) -> AuthConfigOut:
     cfg = settings_from_store(ctx)
-    return AuthConfigOut(oidc_enabled=cfg is not None, oidc_label=ctx.settings.get("oidc.button_label") or "SSO")
+    return AuthConfigOut(oidc_enabled=cfg is not None, oidc_label=ctx.settings.get("oidc.button_label") or "SSO",
+                         setup_required=ctx.setup_code is not None,
+                         default_admin_username=ctx.config.admin_username)
+
+
+@router.post("/setup", response_model=MeOut, status_code=201,
+             responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 429: {"model": ErrorResponse}})
+def setup(body: SetupIn, request: Request, response: Response, s: Session = Depends(get_session),
+          ctx: AppContext = CtxDep) -> MeOut:
+    """First-start setup: create the local admin with the one-time code from the container log, then sign in."""
+    closed = HTTPException(409, detail={"code": "setup_closed", "message": "Die Einrichtung ist bereits abgeschlossen"})
+    if ctx.setup_code is None:
+        raise closed
+    ip = auth.client_ip(request)
+    wait = auth.setup_limiter.retry_after(ip, "setup")
+    if wait:
+        raise _rate_limited(wait)
+    with auth.setup_lock:
+        if ctx.setup_code is None:
+            raise closed
+        if not auth.check_setup_code(ctx.setup_code, body.code):
+            auth.setup_limiter.failure(ip, "setup")
+            log.warning("auth.setup_code_rejected", ip=ip)
+            raise HTTPException(403, detail={"code": "invalid_setup_code", "message": "Einrichtungscode falsch"})
+        if auth.local_admin_exists(s):  # e.g. created by another process
+            ctx.setup_code = None
+            raise closed
+        if s.scalar(select(User.id).where(User.username == body.username)) is not None:
+            raise HTTPException(409, detail={"code": "username_taken", "message": "Benutzername ist bereits vergeben"})
+        user = User(username=body.username, display_name="Administrator", is_admin=True, is_local=True,
+                    password_hash=auth.hash_password(body.password))
+        s.add(user)
+        s.flush()
+        _raw, csrf = auth.create_session(s, user, request, response, "local", ctx.config.cookie_secure)
+        s.commit()
+        # Closed for good: an admin exists now, so no later start generates a code either.
+        ctx.setup_code = None
+    auth.setup_limiter.reset()
+    log.info("auth.setup_completed", user_id=user.id, username=user.username)
+    return me_out(ctx, user, csrf)
 
 
 @router.post("/login", response_model=MeOut, responses={401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}})
@@ -46,9 +111,7 @@ def login(body: LoginIn, request: Request, response: Response, s: Session = Depe
     ip = auth.client_ip(request)
     wait = auth.login_limiter.retry_after(ip, body.username)
     if wait:
-        raise HTTPException(429, detail={"code": "rate_limited",
-                                         "message": f"Zu viele Versuche – bitte {int(wait // 60) + 1} min warten"},
-                            headers={"Retry-After": str(int(wait))})
+        raise _rate_limited(wait)
     user = s.scalar(select(User).where(User.username == body.username, User.is_local.is_(True)))
     ok = auth.verify_password(user.password_hash if user else None, body.password)
     if not ok or user is None or user.disabled:
@@ -58,7 +121,7 @@ def login(body: LoginIn, request: Request, response: Response, s: Session = Depe
     auth.login_limiter.success(ip, body.username)
     _raw, csrf = auth.create_session(s, user, request, response, "local", ctx.config.cookie_secure)
     log.info("auth.login", user_id=user.id, method="local")
-    return MeOut(user=UserOut.model_validate(user), csrf_token=csrf)
+    return me_out(ctx, user, csrf)
 
 
 @router.post("/logout", status_code=204)
@@ -71,8 +134,36 @@ def logout(request: Request, response: Response, s: Session = Depends(get_sessio
 
 
 @router.get("/me", response_model=MeOut, responses={401: {"model": ErrorResponse}})
-def me(request: Request, p: auth.Principal = PrincipalDep) -> MeOut:
-    return MeOut(user=UserOut.model_validate(p.user), csrf_token=getattr(request.state, "csrf_token", None))
+def me(request: Request, p: auth.Principal = PrincipalDep, ctx: AppContext = CtxDep) -> MeOut:
+    return me_out(ctx, p.user, getattr(request.state, "csrf_token", None))
+
+
+@router.post("/password", status_code=204,
+             responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 429: {"model": ErrorResponse}})
+def change_password(body: PasswordChangeIn, request: Request, s: Session = Depends(get_session),
+                    ctx: AppContext = CtxDep, p: auth.Principal = PrincipalDep) -> Response:
+    """Change the own local password. Signs out all other sessions of this account."""
+    user = s.get(User, p.id)
+    assert user
+    if not user.is_local or not user.password_hash:
+        raise HTTPException(409, detail={"code": "no_local_password",
+                                          "message": "Dieses Konto meldet sich per SSO an und hat kein Passwort"})
+    if not can_change_password(ctx, user):
+        raise HTTPException(409, detail={"code": "password_locked",
+                                          "message": "Das Passwort ist per Umgebungsvariable festgelegt"})
+    ip = auth.client_ip(request)
+    wait = auth.login_limiter.retry_after(ip, user.username)
+    if wait:
+        raise _rate_limited(wait)
+    if not auth.verify_password(user.password_hash, body.current_password):
+        auth.login_limiter.failure(ip, user.username)
+        log.warning("auth.password_change_failed", user_id=user.id, ip=ip)
+        raise HTTPException(403, detail={"code": "invalid_current_password",
+                                          "message": "Aktuelles Passwort ist falsch"})
+    user.password_hash = auth.hash_password(body.new_password)
+    ended = auth.delete_other_sessions(s, user.id, p.session_id)
+    log.info("auth.password_changed", user_id=user.id, other_sessions_ended=ended)
+    return Response(status_code=204)
 
 
 @router.patch("/me", response_model=UserOut)

@@ -9,22 +9,33 @@ Browser ──HTTPS──▶ DSM reverse proxy (scanbox.home.lan:443) ──HTTP
 Scanner (eSCL, HTTP) ◀────────────────── container polls/scans ──────┘
 ```
 
-## 1. Prepare folders and secrets
+## 1. Prepare folders
 
-Over SSH (or File Station + a text editor):
+Create `/volume1/docker/scanbox/data` (File Station or SSH) and give the container user write access:
 
 ```sh
-sudo mkdir -p /volume1/docker/scanbox/{data,secrets}
-# 48+ random chars; keep a backup. Changing it invalidates sessions and stored secrets (SMTP/Paperless).
-openssl rand -base64 48 | sudo tee /volume1/docker/scanbox/secrets/secret_key >/dev/null
-echo 'a-long-local-admin-password' | sudo tee /volume1/docker/scanbox/secrets/admin_password >/dev/null
-sudo chmod 600 /volume1/docker/scanbox/secrets/*
+sudo mkdir -p /volume1/docker/scanbox/data
 id your-dsm-user       # → uid / gid for `user:` in docker-compose.yml
 sudo chown -R <uid>:<gid> /volume1/docker/scanbox
 ```
 
 The container runs as the UID/GID set in `user:` (default in the compose file: `1026:100`). That user needs
 write access to `/data` and to every output folder you mount.
+
+No password file is needed: the admin account is created in the browser on first start (§5).
+
+**Secret key (optional).** Scanbox encrypts stored secrets (SMTP password, Paperless tokens, OIDC client
+secret) with a key. Without one it generates `/data/secret.key` on first start, so the key sits next to the
+database and ends up in the same backups. To keep it apart, create it yourself and uncomment
+`SCANBOX_SECRET_KEY_FILE` and the `secrets:` entries in the compose file:
+
+```sh
+sudo mkdir -p /volume1/docker/scanbox/secrets
+# 48+ random chars; keep a backup. Changing it invalidates sessions and stored secrets (SMTP/Paperless).
+openssl rand -base64 48 | sudo tee /volume1/docker/scanbox/secrets/secret_key >/dev/null
+sudo chmod 600 /volume1/docker/scanbox/secrets/*
+sudo chown -R <uid>:<gid> /volume1/docker/scanbox/secrets
+```
 
 ## 2. Pull the image
 
@@ -49,10 +60,10 @@ Container Manager → *Project* → *Create* → path `/volume1/docker/scanbox`,
 | Variable | Meaning |
 |---|---|
 | `SCANBOX_BASE_URL` | The HTTPS URL users open, e.g. `https://scanbox.home.lan`. Used for the OIDC redirect URI and links in webhooks. |
-| `SCANBOX_SCANNER_URL` | Optional, **normally left unset**: set the scanner address in Admin → *Scanner* instead (see §6). If set here, the admin UI field becomes read-only. |
-| `SCANBOX_SECRET_KEY_FILE` / `SCANBOX_SECRET_KEY` | Session signing + encryption of stored secrets. Without it a key is generated in `/data/secret.key`. |
-| `SCANBOX_ADMIN_USERNAME`, `SCANBOX_ADMIN_PASSWORD(_FILE)` | Local admin (fallback when SSO is down). Password ≥ 8 characters; re-hashed on change. |
-| `SCANBOX_OIDC_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET(_FILE)`, `_SCOPES`, `_ADMIN_CLAIM`, `_ADMIN_VALUE` | Optional, **normally left unset**: configure SSO in Admin → *SSO* instead (see §5). Each variable that is set pins its value and makes that field read-only in the UI. |
+| `SCANBOX_SCANNER_URL` | Optional, **normally left unset**: set the scanner address in Admin → *Scanner* instead (see §7). If set here, the admin UI field becomes read-only. |
+| `SCANBOX_SECRET_KEY_FILE` / `SCANBOX_SECRET_KEY` | Optional. Session signing + encryption of stored secrets. Without it a key is generated in `/data/secret.key`. |
+| `SCANBOX_ADMIN_PASSWORD(_FILE)`, `SCANBOX_ADMIN_USERNAME` (`admin`) | Optional, **normally left unset**: the admin is created in the browser on first start (§5). For automated setups (CI, scripts) the password can be set here instead (≥ 8 characters, re-hashed on change). Then the setup page does not appear and the password cannot be changed in the app. Without a password, `SCANBOX_ADMIN_USERNAME` is only the suggested name on the setup page. |
+| `SCANBOX_OIDC_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET(_FILE)`, `_SCOPES`, `_ADMIN_CLAIM`, `_ADMIN_VALUE` | Optional, **normally left unset**: configure SSO in Admin → *SSO* instead (see §6). Each variable that is set pins its value and makes that field read-only in the UI. |
 | `SCANBOX_OUTPUT_ROOTS` | `Name=/path;Other=/path2` – folders users can deliver to (paths inside the container, mount them as volumes). |
 | `SCANBOX_PAPERLESS_URL`, `SCANBOX_PAPERLESS_CONSUME_DIR` | Paperless-ngx (API URL and/or mounted consume folder). |
 | `SCANBOX_OCR_CONCURRENCY` (1), `SCANBOX_OCR_JOBS` (2), `SCANBOX_NICE_LEVEL` (10) | CPU budget: OCR documents in parallel, Tesseract threads per document, process priority. |
@@ -78,7 +89,34 @@ DSM → *Control Panel* → *Login Portal* → *Advanced* → *Reverse Proxy* �
 * Certificate: *Control Panel* → *Security* → *Certificate* → assign one to `scanbox.home.lan` (a local CA or Let's Encrypt via DNS challenge).
 * DNS: point `scanbox.home.lan` to the NAS (router, Pi-hole or DSM DNS Server).
 
-## 5. Synology SSO Server (OIDC)
+## 5. First start: create the admin account
+
+Scanbox has no admin account after the first start. It writes a one-time **setup code** to the container
+log instead:
+
+1. Container Manager → *Container* → `scanbox` → *Log*. Look for the entry `auth.setup_required`, e.g.
+   `"setup_code": "K7QM-3XRD-WP9H"`.
+2. Open `https://scanbox.home.lan`. The page shows *Set up Scanbox* instead of the login form.
+3. Enter the code, a username (default `admin`) and a password (at least 8 characters). You are signed in
+   as admin right away.
+
+Setup closes for good once the admin exists. The code is then useless, and later starts don't create a new
+one. Until then, every start of the container creates a new code and the previous one stops working. Only
+someone who can read the container log can claim the admin account. Complete the setup right after the
+first start anyway.
+
+The admin's password is stored only as an argon2 hash in the database. Change it in **Settings → Password**:
+this needs the current password and signs out all other sessions of the account.
+
+**Forgot the password?** Set `SCANBOX_ADMIN_PASSWORD` (and `SCANBOX_ADMIN_USERNAME` if the account is not
+called `admin`) in the compose file and restart: that sets the password. Remove the variable again and
+restart. The account keeps the password, and you can change it in the app again.
+
+**Upgrading from a version with a password file:** remove `SCANBOX_ADMIN_PASSWORD_FILE`, the
+`scanbox_admin_password` secret and the file itself, then restart. The admin keeps its current password
+(the hash is already in the database); change it in *Settings* from now on.
+
+## 6. Synology SSO Server (OIDC)
 
 1. Install **SSO Server** from the Package Center. Under *General* set the server URL, e.g. `https://sso.home.lan`. The issuer is then `https://sso.home.lan/webman/sso` (check `<issuer>/.well-known/openid-configuration` in a browser).
 2. *Application* → *Add* → **OIDC**:
@@ -89,23 +127,24 @@ DSM → *Control Panel* → *Login Portal* → *Advanced* → *Reverse Proxy* �
 4. Admin role: Scanbox makes a user admin when the claim *Admin claim* (default `groups`) contains one of the comma-separated values in *Admin value*. Whether Synology's SSO Server sends a `groups` claim depends on the DSM version and the user directory. If it doesn't, use a claim it does send, e.g. *Admin claim* `preferred_username` with *Admin value* `christian,anna`. Every SSO login writes the *names* of the received claims to the log (`auth.login … claims=[…]`, Admin → Diagnostics → download logs), so you can see which claim to use.
 5. The local admin always works as a fallback (`/login` → username/password).
 
-## 6. Scanner network settings
+## 7. Scanner network settings
 
 * Give the scanner a fixed IP (DHCP reservation), then enter its address in **Admin → *Scanner*** → *Test connection* → *Use this address*. The test shows the model, serial number and status; the address is saved and used immediately. Change it there whenever the scanner moves.
 * The container talks to the scanner over HTTP on the LAN (bridge networking is fine; the scanner never connects to the container).
 * The HP web UI (EWS) must have **eSCL / AirScan** enabled (usually on by default).
 
-## 7. Backups and updates
+## 8. Backups and updates
 
 * Back up `/volume1/docker/scanbox/data` (SQLite database + cache) with Hyper Backup. The DB uses WAL mode; snapshot backups are consistent. For file-level backups, stop the project first or back up `scanbox.db*` together.
 * Update: Container Manager → *Image* → pull `latest` (or a version tag) → *Project* → *Action* → *Build/Restart*. Database migrations run automatically on start. Interrupted jobs are recovered: pages already received are kept, and processing and deliveries resume without duplicates.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | "Scanner offline" | Admin → Scanner → Test connection; is the IP still right? Can the NAS reach it: `curl http://<ip>/eSCL/ScannerStatus`? |
 | SSO button → error | Admin → Diagnostics → recent errors (`oidc.*`). Redirect URI typo? Issuer without `/webman/sso`? Clock skew? |
+| Setup code rejected | The container restarted since the code was logged: use the newest `auth.setup_required` entry. Too many wrong codes block setup for 15 minutes. |
 | Live updates stall | Reverse proxy timeout / buffering (§4). The UI reconnects automatically and refetches. |
 | Container unhealthy | `/readyz` failed: DB not writable (permissions of `/data`) or disk below the threshold. |
 | Permission denied writing to a folder | `user:` UID/GID must have write access to the mounted share. |

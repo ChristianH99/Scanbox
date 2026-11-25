@@ -15,7 +15,7 @@ import pytest
 
 from scanbox.config import AppConfig
 from scanbox.context import AppContext
-from scanbox.security.auth import login_limiter
+from scanbox.security.auth import login_limiter, setup_limiter
 
 ADMIN_PW = "admin-password-123"
 HAVE_TESSERACT = shutil.which("tesseract") is not None and shutil.which("ocrmypdf") is not None
@@ -111,6 +111,7 @@ async def harness_factory(tmp_path: Path) -> AsyncIterator[Callable[..., Any]]:
                    customize: Callable[[AppContext], None] | None = None, sim_state: Any = None,
                    **config_kw: Any) -> Harness:
         login_limiter.reset()
+        setup_limiter.reset()
         state = sim_state or SimState(stack=stack)
         sim_app = create_sim(state)
         dd = data_dir or tmp_path / "data"

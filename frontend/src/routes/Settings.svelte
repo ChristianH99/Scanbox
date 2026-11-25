@@ -1,12 +1,12 @@
 <script lang="ts">
   import Icon from '../lib/components/Icon.svelte';
   import Modal from '../lib/components/Modal.svelte';
-  import { api, errorMessage } from '../lib/api/client';
+  import { api, errorMessage, isApiError } from '../lib/api/client';
   import type { ApiToken, ApiTokenCreated, Contact, UserSettings } from '../lib/api/types';
-  import { session, updatePrefs, type Theme } from '../lib/stores/session.svelte';
+  import { changePassword, session, updatePrefs, type Theme } from '../lib/stores/session.svelte';
   import { notify } from '../lib/stores/toast.svelte';
   import { confirmDialog } from '../lib/stores/dialog.svelte';
-  import { fmtDateTime, i18n, t } from '../lib/i18n/index.svelte';
+  import { fmtDateTime, i18n, t, tMaybe } from '../lib/i18n/index.svelte';
   import { copyText } from '../lib/utils/misc';
 
   let settings = $state<UserSettings | null>(null);
@@ -23,6 +23,31 @@
   let cEmail = $state('');
   let cDefault = $state(false);
   let editingContact = $state<number | null>(null);
+
+  const MIN_PASSWORD = 8;
+  let pwCurrent = $state('');
+  let pwNew = $state('');
+  let pwConfirm = $state('');
+  let pwBusy = $state(false);
+  let pwError = $state<string | null>(null);
+  let pwMismatch = $derived(pwConfirm.length > 0 && pwConfirm !== pwNew);
+
+  async function submitPassword(e: SubmitEvent) {
+    e.preventDefault();
+    if (pwNew !== pwConfirm) return;
+    pwBusy = true;
+    pwError = null;
+    try {
+      await changePassword(pwCurrent, pwNew);
+      pwCurrent = pwNew = pwConfirm = '';
+      notify.success(t('settings.password_changed'));
+    } catch (err) {
+      pwError = isApiError(err) ? tMaybe(`settings.password_error.${err.code}`, errorMessage(err)) : errorMessage(err);
+      pwCurrent = '';
+    } finally {
+      pwBusy = false;
+    }
+  }
 
   let tokenName = $state('');
   let tokenDays = $state<number | ''>('');
@@ -180,6 +205,31 @@
     </form>
     <p class="text-xs text-slate-500 sm:col-span-3">{t('settings.signed_in_as', { user: session.user?.username ?? '' })}{session.user?.email ? ` · ${session.user.email}` : ''}</p>
   </section>
+
+  {#if session.user?.is_local}
+    <section class="card p-4" data-testid="password-section">
+      <h2 class="section-title">{t('settings.password')}</h2>
+      {#if session.canChangePassword}
+        <form class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3" onsubmit={submitPassword}>
+          <p class="hint sm:col-span-3">{t('settings.password_hint')}</p>
+          <!-- Lets password managers store the new password for the right account. -->
+          <input type="text" class="hidden" autocomplete="username" value={session.user.username} readonly tabindex="-1" aria-hidden="true" />
+          <div><label class="label" for="pw-current">{t('settings.password_current')}</label>
+            <input id="pw-current" type="password" class="input" autocomplete="current-password" required maxlength="500" bind:value={pwCurrent} /></div>
+          <div><label class="label" for="pw-new">{t('settings.password_new')}</label>
+            <input id="pw-new" type="password" class="input" autocomplete="new-password" required minlength={MIN_PASSWORD} maxlength="500" bind:value={pwNew} />
+            <p class="hint">{t('setup.password_hint', { n: MIN_PASSWORD })}</p></div>
+          <div><label class="label" for="pw-confirm">{t('settings.password_confirm')}</label>
+            <input id="pw-confirm" type="password" class="input" autocomplete="new-password" required maxlength="500" bind:value={pwConfirm} aria-invalid={pwMismatch} />
+            {#if pwMismatch}<p class="mt-1 text-xs text-red-700 dark:text-red-300">{t('setup.password_mismatch')}</p>{/if}</div>
+          {#if pwError}<p class="rounded-lg bg-red-50 p-3 text-sm text-red-800 sm:col-span-3 dark:bg-red-950 dark:text-red-200" role="alert" data-testid="password-error">{pwError}</p>{/if}
+          <div class="sm:col-span-3"><button type="submit" class="btn btn-secondary" disabled={pwBusy || pwMismatch}>{#if pwBusy}<Icon name="loader" />{/if}{t('settings.password_submit')}</button></div>
+        </form>
+      {:else}
+        <p class="hint mt-2">{t('settings.password_locked')}</p>
+      {/if}
+    </section>
+  {/if}
 
   <section class="card space-y-3 p-4">
     <h2 class="section-title">{t('settings.contacts')}</h2>

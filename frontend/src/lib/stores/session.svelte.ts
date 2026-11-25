@@ -7,10 +7,17 @@ import { storageGet, storageSet } from '../utils/misc';
 
 export type Theme = 'system' | 'light' | 'dark';
 
-export const session = $state<{ user: User | null; ready: boolean; authConfig: AuthConfig | null }>({
+export const session = $state<{
+  user: User | null;
+  ready: boolean;
+  authConfig: AuthConfig | null;
+  /** Local account whose password may be changed in the app (not SSO, not pinned by the environment). */
+  canChangePassword: boolean;
+}>({
   user: null,
   ready: false,
   authConfig: null,
+  canChangePassword: false,
 });
 
 // ------------------------------------------------------------------ theme
@@ -33,8 +40,10 @@ export function initTheme(): void {
 }
 
 // ------------------------------------------------------------------ session
-function adopt(user: User): void {
+function adopt(me: Me): void {
+  const user = me.user;
   session.user = user;
+  session.canChangePassword = !!me.can_change_password;
   if (user.locale === 'de' || user.locale === 'en') i18n.locale = user.locale;
   applyTheme((user.theme as Theme) || 'system');
   connectLive(checkSession);
@@ -69,16 +78,16 @@ function signedOut(): void {
 
 export async function loadSession(): Promise<void> {
   setUnauthorizedHandler((path) => {
-    if (!path.startsWith('/api/auth/login')) signedOut();
+    if (!path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/setup')) signedOut();
   });
   try {
     session.authConfig = await api.get<AuthConfig>('/api/auth/config');
   } catch {
-    session.authConfig = { oidc_enabled: false, oidc_label: 'SSO', local_login: true };
+    session.authConfig = { oidc_enabled: false, oidc_label: 'SSO', local_login: true, setup_required: false, default_admin_username: 'admin' };
   }
   try {
     const me = await api.get<Me>('/api/auth/me', { allow401: true });
-    adopt(me.user);
+    adopt(me);
   } catch (e) {
     session.user = null;
     if (!(isApiError(e) && e.status === 401)) {
@@ -92,7 +101,18 @@ export async function loadSession(): Promise<void> {
 
 export async function login(username: string, password: string): Promise<void> {
   const me = await api.post<Me>('/api/auth/login', { username, password });
-  adopt(me.user);
+  adopt(me);
+}
+
+/** First-start setup: create the admin with the one-time code from the container log, then sign in. */
+export async function completeSetup(code: string, username: string, password: string): Promise<void> {
+  const me = await api.post<Me>('/api/auth/setup', { code, username, password });
+  if (session.authConfig) session.authConfig.setup_required = false;
+  adopt(me);
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await api.post('/api/auth/password', { current_password: currentPassword, new_password: newPassword });
 }
 
 export async function logout(): Promise<void> {

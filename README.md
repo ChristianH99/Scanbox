@@ -31,7 +31,7 @@ are visible, with a clear recovery path, and a delivery can be retried without r
 
 ## Quick start (Synology)
 
-See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: secrets, `docker-compose.yml`, reverse proxy, SSO client, volumes.
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: `docker-compose.yml`, reverse proxy, first-start setup, SSO client, volumes.
 
 ```sh
 docker pull ghcr.io/christianh99/scanbox:latest

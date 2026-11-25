@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../lib/components/Icon.svelte';
+  import Setup from './Setup.svelte';
   import { login, session } from '../lib/stores/session.svelte';
   import { router } from '../lib/router.svelte';
   import { isApiError, errorMessage } from '../lib/api/client';
@@ -42,6 +43,9 @@
     </div>
 
     <div class="card space-y-4 p-5">
+      {#if session.authConfig?.setup_required}
+        <Setup />
+      {:else}
       {#if urlErrorText}
         <div class="flex gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200" role="alert">
           <Icon name="alert" size={18} />{urlErrorText}
@@ -74,6 +78,7 @@
           {#if busy}<Icon name="loader" />{/if}{t('login.submit')}
         </button>
       </form>
+      {/if}
     </div>
 
     <div class="mt-4 flex justify-center gap-2 text-sm">

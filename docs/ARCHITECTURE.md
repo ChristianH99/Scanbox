@@ -84,7 +84,7 @@ All timestamps are UTC. Files live under `SCANBOX_DATA_DIR` (default `/data`):
 
 | Table | Purpose |
 |---|---|
-| `users` | `sub` (OIDC subject, unique), `username`, `display_name`, `email`, `is_admin`, `is_local`, `password_hash` (argon2, local admin only), `locale`, `theme`, `disabled` |
+| `users` | `sub` (OIDC subject, unique), `username`, `display_name`, `email`, `is_admin`, `is_local`, `password_hash` (argon2, local accounts only), `locale`, `theme`, `disabled` |
 | `sessions` | server-side sessions: hashed id, user, `csrf_token`, expiry, last seen |
 | `api_tokens` | per-user bearer tokens (SHA-256 hash stored, shown once), name, last used, revoked |
 | `settings` | admin key/value (JSON); secret values encrypted |
@@ -289,7 +289,9 @@ Errors are raised as `DeliveryError(code, message, retryable)`. Retryable errors
 ## 11. Auth and security
 
 * **OIDC** (Synology SSO Server) via Authlib: authorization code + PKCE (S256), `state` + `nonce`. Redirect URI `https://<host>/api/auth/oidc/callback`. Admin if the configured claim (`SCANBOX_OIDC_ADMIN_CLAIM`, default `groups`) contains `SCANBOX_OIDC_ADMIN_VALUE` (default `scanbox-admins`).
-* **Local admin**: username/password from `SCANBOX_ADMIN_USERNAME` / `SCANBOX_ADMIN_PASSWORD(_FILE)`, hashed with argon2 on first start. Login is rate-limited: 5 failures per 15 min per IP+username, and 20 per IP.
+* **Local admin**: created on first start through the setup page. While no local admin exists (and no password is set in the environment), each start generates a one-time setup code (12 characters, ~60 bits), keeps it only in memory and writes it to the log (`auth.setup_required`). `POST /api/auth/setup` with the code, a username and a password creates the admin and signs it in. Setup then closes for good, and a restart invalidates an unused code. Wrong codes are rate-limited (10 per 15 min per IP, 30 overall).
+* **Password change**: `POST /api/auth/password` needs the current password (failures count towards the login rate limit) and deletes all other sessions of the account.
+* **Pinned admin**: with `SCANBOX_ADMIN_PASSWORD(_FILE)` set (CI, system test), the admin `SCANBOX_ADMIN_USERNAME` gets that password on every start, the setup page never appears, and the password cannot be changed in the app (`password_locked`). Passwords are hashed with argon2. Login is rate-limited: 5 failures per 15 min per IP+username, and 20 per IP.
 * **Sessions**: random 256-bit id in cookie `scanbox_session` (HttpOnly, Secure, SameSite=Lax, Path=/). Only the SHA-256 hash is stored. Idle timeout 7 days, absolute 30 days.
 * **CSRF**: double submit. Cookie `scanbox_csrf` (readable by JS) must equal header `X-CSRF-Token` for every unsafe method with cookie auth. Bearer-token requests are exempt (no ambient credentials).
 * **Login errors** are passed to the SPA as `/login?error=<code>`: `sso_unavailable` (discovery failed), `sso_disabled`, `sso_failed` (state/nonce/token validation), `sso_<provider error>` (e.g. `sso_access_denied`) and `account_disabled`.

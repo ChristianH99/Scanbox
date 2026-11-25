@@ -14,6 +14,9 @@ Browsermenü → „Zum Startbildschirm hinzufügen“ bzw. „App installieren�
 * **Lokales Konto**: Benutzername und Passwort. Nach mehreren Fehlversuchen ist die Anmeldung einige Minuten
   gesperrt; die Meldung nennt die Wartezeit.
 * Sprache (Deutsch/English) lässt sich schon auf der Anmeldeseite umschalten.
+* **Erster Start**: Solange es kein Administratorkonto gibt, zeigt die Seite „Scanbox einrichten“. Den
+  Einrichtungscode findet der NAS-Admin im Container-Log (Container Manager → Container → scanbox →
+  Protokoll). Danach ist die Einrichtung geschlossen. Details: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 2. Scannen
 
@@ -182,8 +185,9 @@ Pro Profil beliebig viele Ziele, die beim Abschließen beliefert werden:
 
 ## 9. Einstellungen
 
-Sprache, Design (System/Hell/Dunkel), Anzeigename, Adressbuch (Standard-Empfänger mit Haken),
-E-Mail-Vorlagen, Paperless-Token (wird nur gespeichert, nie wieder angezeigt) und **API-Tokens**.
+Sprache, Design (System/Hell/Dunkel), Anzeigename, **Passwort** (nur lokale Konten: braucht das aktuelle
+Passwort und meldet alle anderen Sitzungen ab), Adressbuch (Standard-Empfänger mit Haken), E-Mail-Vorlagen,
+Paperless-Token (wird nur gespeichert, nie wieder angezeigt) und **API-Tokens**.
 
 ## 10. API-Tokens und Home Assistant
 
@@ -236,7 +240,9 @@ Passwörter/Secrets werden nie angezeigt, nur „gesetzt“/„nicht gesetzt“.
 
 ## English summary
 
-* **Sign in** with SSO or the local account. Switch language on the login page or in *Settings*.
+* **Sign in** with SSO or the local account. Switch language on the login page or in *Settings*. On first
+  start, *Set up Scanbox* creates the admin with the one-time code from the container log.
+* **Password**: local accounts change it in *Settings* (needs the current password, signs out other sessions).
 * **Scan**: the status card tells you whether the scanner is ready, busy (your scan is queued), offline or
   needs attention (jam, cover open, multi-feed). Pick a profile, optionally a title and quick overrides
   (sides, resolution, colour – only what the scanner supports), tap **Start scan**. Pages appear live as
