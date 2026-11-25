@@ -81,8 +81,8 @@ jobs:
           docker compose -f docker-compose.dev.yml up -d --build scanbox escl-sim
           for i in $(seq 1 60); do curl -fsS http://localhost:8080/readyz && break; sleep 2; done
           curl -fsS http://localhost:8080/readyz
-          # the running app reports the release version (admin diagnostics, /healthz, logs)
-          test "$(curl -fsS http://localhost:8080/healthz | jq -r .version)" = "${{ needs.publish.outputs.version }}"
+          # The release version is checked in verify-published: this image is built without one
+          # (reports "dev") and publish, which defines the version, runs after this job.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -234,6 +234,8 @@ jobs:
           docker compose -f docker-compose.dev.yml up -d --no-build scanbox escl-sim
           for i in $(seq 1 60); do curl -fsS http://localhost:8080/readyz && break; sleep 2; done
           curl -fsS http://localhost:8080/readyz
+          # the running app reports the release version (admin diagnostics, /healthz, logs)
+          test "$(curl -fsS http://localhost:8080/healthz | jq -r .version)" = "${{ needs.publish.outputs.version }}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
