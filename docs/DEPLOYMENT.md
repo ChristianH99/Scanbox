@@ -28,7 +28,13 @@ write access to `/data` and to every output folder you mount.
 
 ## 2. Pull the image
 
-The GitHub Actions workflow publishes `ghcr.io/christianh99/scanbox` with the tags `latest`, `<version>` (e.g. `0.1.0`) and `sha-<short>`.
+The GitHub Actions workflow publishes `ghcr.io/christianh99/scanbox` with these tags:
+
+* `1.2.3` / `1.2`: releases (created from the git tag `v1.2.3`). Pin one of these for predictable updates.
+* `latest`: the current state of `main`, rebuilt on every push.
+* `sha-<short>`: one specific commit.
+
+Admin → Diagnostics shows which version is running (`main-<sha>` for a `latest` build).
 
 * **Public package** (GitHub → Packages → scanbox → Package settings → Change visibility → Public): Container Manager can pull it without credentials.
 * **Private package**: create a GitHub personal access token (classic) with only the **`read:packages`** scope. Then in Container Manager → *Registry* → *Settings* → *Add*:

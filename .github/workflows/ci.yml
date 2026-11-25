@@ -81,6 +81,8 @@ jobs:
           docker compose -f docker-compose.dev.yml up -d --build scanbox escl-sim
           for i in $(seq 1 60); do curl -fsS http://localhost:8080/readyz && break; sleep 2; done
           curl -fsS http://localhost:8080/readyz
+          # the running app reports the release version (admin diagnostics, /healthz, logs)
+          test "$(curl -fsS http://localhost:8080/healthz | jq -r .version)" = "${{ needs.publish.outputs.version }}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -148,17 +150,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Version
+        # The release tag is the only source of the version: v1.2.3 -> 1.2.3. Other builds are named
+        # after branch and commit (main-3f8a1c2), so they never pose as a release.
         id: ver
         run: |
-          v=$(grep -m1 '^version' backend/pyproject.toml | cut -d'"' -f2)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Release tags must look like v1.2.3 (or v1.2.3-rc.1), got $GITHUB_REF_NAME"
+              exit 1
+            fi
+            v="${GITHUB_REF_NAME#v}"
+          else
+            b="${GITHUB_REF_NAME//[^0-9A-Za-z.-]/-}"
+            v="${b}-${GITHUB_SHA::7}"
+          fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Version: $v"
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ steps.ver.outputs.version }},enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
@@ -177,6 +190,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=runtime
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.ver.outputs.version }}
 
   verify-published:
     # Pull the image exactly as published (by digest) and run the system test and the browser tests
@@ -204,6 +218,7 @@ jobs:
           docker pull "$PUBLISHED"
           docker image inspect "$PUBLISHED" --format 'version={{index .Config.Labels "org.opencontainers.image.version"}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
           test "$(docker image inspect "$PUBLISHED" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          test "$(docker image inspect "$PUBLISHED" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "${{ needs.publish.outputs.version }}"
       - name: Build tools image (mocks + test runner)
         uses: docker/build-push-action@v6
         with:

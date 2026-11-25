@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scanbox"
-version = "0.1.0"
+version = "0.0.0"  # placeholder – the real version is the git tag (see README "Releases")
 description = "Self-hosted LAN web app for eSCL network scanners (HP ScanJet Pro N4000)"
 requires-python = ">=3.12"
 license = "MIT"

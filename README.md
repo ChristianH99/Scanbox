@@ -82,9 +82,24 @@ its button, cut-off navigation labels and horizontal scrolling. Intentional over
 handle on page thumbnails) are marked with `data-layout-overlay`.
 
 CI (GitHub Actions) runs lint, the backend suite in the Docker test image, frontend checks, Playwright e2e
-against the app + simulator and the system test, then publishes the image to GHCR (`latest`, version,
-`sha-…`). Afterwards, `verify-published` pulls the image *as published* (by digest), checks that its revision
-label matches the commit, and runs the system test and the browser tests against it again.
+against the app + simulator and the system test, then publishes the image to GHCR (see *Releases*). Afterwards, `verify-published` pulls the image *as
+published* (by digest), checks that its revision and version match the commit and the tag, and runs the
+system test and the browser tests against it again.
+
+### Releases
+
+The git tag is the only place the version is set (`pyproject.toml` and `package.json` keep a `0.0.0`
+placeholder). To release, create a tag `vX.Y.Z` on `main`, e.g. by publishing a GitHub release with a new
+tag. CI then publishes:
+
+| Trigger | Image tags | Version shown in the app |
+|---|---|---|
+| Tag `v1.2.3` | `1.2.3`, `1.2`, `sha-<short>` | `1.2.3` |
+| Push to `main` | `latest`, `sha-<short>` | `main-<short sha>` |
+| Local build | – | `dev` |
+
+Tags that aren't `vX.Y.Z` (optionally `-rc.1` etc.) fail the build. A version tag is only published after all
+tests pass, and is never overwritten by later pushes to `main`.
 
 ## Documentation
 
