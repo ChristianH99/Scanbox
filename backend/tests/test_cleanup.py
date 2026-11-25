@@ -1,14 +1,13 @@
-"""Background cleanup and blank detection – synthetic cases plus two real N4000 scans.
+"""Background cleanup and blank detection.
 
-Fixtures (tests/fixtures/real, reduced to 150 dpi):
-* n4000_front_flyer.jpg – printed flyer, fold crease, grey tint, light artwork, backdrop strip on the
-  left edge and 4 truncated (grey) JPEG rows at the bottom, as delivered by the scanner;
-* n4000_back_blank.jpg – the empty back side of it: crease, show-through, backdrop strip, dark corner.
+``_scanned_front`` / ``_scanned_back`` reproduce what a real HP ScanJet N4000 delivered for a folded
+A4 flyer at 150 dpi (measured on the original scans, which are not in the repository):
+* front – text, dark artwork, light grey background artwork, fold crease, a grey backdrop strip on the
+  left edge, 2 truncated (grey) JPEG rows at the bottom and dark corners;
+* back – the empty back side: crease, faint mirrored show-through, backdrop strip, dark corners.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -20,14 +19,51 @@ from scanbox.profiles import ProcessingOptions, ProfileSettings, effective_clean
 
 from .conftest import FAST, builtin_profile_id
 
-REAL = Path(__file__).parent / "fixtures" / "real"
 CLEAN = ops.Enhance(clean_background=True)
 
 
-def _real(name: str) -> np.ndarray:
-    img = cv2.imread(str(REAL / name))
-    assert img is not None
-    return img
+def _scanner_artefacts(pg: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Fold crease, backdrop strip, dark corners, sensor noise and a JPEG round trip, as from the N4000."""
+    h, w = pg.shape[:2]
+    for x in range(40, w - 20, 6):  # fold crease: broken, slightly bluish line across the middle
+        y = h // 2 + int(4 * np.sin(x / 90))
+        pg[y:y + 3, x:x + 4] = (238, 226, 226) if rng.random() < 0.7 else (250, 246, 246)
+    pg[:, :12] = np.linspace(134, 121, 12).astype(np.uint8)[None, :, None]  # backdrop strip
+    for y0, y1, x0, x1, v in ((0, 30, 0, 30, 170), (h - 30, h, 0, 30, 175), (0, 4, w - 60, w, 90)):
+        pg[y0:y1, x0:x1] = v  # dark corners
+    noise = rng.normal(0, 1.5, pg.shape)
+    pg = np.clip(pg + noise, 0, 255).astype(np.uint8)
+    ok, enc = cv2.imencode(".jpg", pg, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    assert ok
+    return cv2.imdecode(enc, cv2.IMREAD_COLOR)
+
+
+def _scanned_front() -> np.ndarray:
+    rng = np.random.default_rng(1)
+    pg = np.full((1754, 1240, 3), 255, np.uint8)
+    cv2.circle(pg, (1040, 140), 95, (20, 20, 20), 22)  # stamp-like logo
+    cv2.rectangle(pg, (150, 230), (290, 500), (25, 25, 25), -1)  # dark artwork
+    cv2.rectangle(pg, (170, 260), (270, 330), (250, 250, 250), -1)
+    for i in range(8):  # light grey background artwork behind the text
+        cv2.line(pg, (650 + i * 60, 1100), (700 + i * 60, 1550), (205, 205, 205), 4)
+    lines = [(120, 150, 1.4), (500, 400, 3.0), (180, 700, 1.6), (120, 800, 1.6), (240, 900, 1.2),
+             (130, 1090, 1.3), (130, 1150, 1.3), (130, 1210, 1.3), (110, 1370, 1.3), (110, 1430, 1.3),
+             (180, 1490, 1.3), (150, 1590, 0.9)]
+    for x, y, size in lines:
+        cv2.putText(pg, "Einladung zum Fest am Sonntag", (x, y), cv2.FONT_HERSHEY_DUPLEX, size, (15, 15, 15),
+                    max(2, int(size * 2.5)))
+    pg = _scanner_artefacts(pg, rng)
+    pg[-2:, :] = 128  # truncated JPEG rows
+    return pg
+
+
+def _scanned_back() -> np.ndarray:
+    rng = np.random.default_rng(2)
+    pg = np.full((1748, 1240, 3), 255, np.uint8)
+    for i, y in enumerate((340, 690, 800, 1080, 1180, 1420, 1480)):  # show-through: mirrored, very faint
+        cv2.putText(pg, "tsef muz gnudalniE"[: 10 + i], (300, y), cv2.FONT_HERSHEY_DUPLEX, 1.5,
+                    (243, 241, 243), 3)
+    return _scanner_artefacts(pg, rng)
 
 
 def _page(h: int = 1754, w: int = 1240) -> np.ndarray:
@@ -90,10 +126,10 @@ def test_ink_ignores_creases_strips_and_show_through() -> None:
     assert ops.ink_coverage(pg) > 0.004
 
 
-def test_real_n4000_pages() -> None:
+def test_scanned_flyer_front_and_blank_back() -> None:
     profile = ProfileSettings()
     assert effective_clean_background(profile)
-    front, back = _real("n4000_front_flyer.jpg"), _real("n4000_back_blank.jpg")
+    front, back = _scanned_front(), _scanned_back()
     assert measure_ink_fast(back, profile) < profile.processing.blank_threshold / 10
     assert measure_ink_fast(front, profile) > 0.05
     clean_back = finish_page(back, PageEdits(), profile)
@@ -113,7 +149,7 @@ def test_clean_background_modes_and_page_override() -> None:
     assert not effective_clean_background(ProfileSettings(processing=ProcessingOptions(clean_background="off")))
     assert effective_clean_background(ProfileSettings(intent="Photo",
                                                       processing=ProcessingOptions(clean_background="on")))
-    back = _real("n4000_back_blank.jpg")
+    back = _scanned_back()
     kept = finish_page(back, PageEdits(clean_background=False), ProfileSettings())
     assert (ops.to_gray(kept) < 250).mean() > 0.01  # per-page override disables cleanup
 

@@ -201,7 +201,7 @@ def test_normalise_address_invalid(bad: str) -> None:
 async def test_client_rewrites_location_host() -> None:
     """Scanners return Location with their mDNS name; we must keep talking to the configured address."""
     c = EsclClient("http://10.0.0.9:8080")
-    assert c.resolve_job_uri("http://HPB0795E.local:8080/eSCL/ScanJobs/x") == "http://10.0.0.9:8080/eSCL/ScanJobs/x"
+    assert c.resolve_job_uri("http://HP000000.local:8080/eSCL/ScanJobs/x") == "http://10.0.0.9:8080/eSCL/ScanJobs/x"
     assert c.resolve_job_uri("/eSCL/ScanJobs/y") == "http://10.0.0.9:8080/eSCL/ScanJobs/y"
 
 

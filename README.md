@@ -112,6 +112,16 @@ curl -X POST https://scanbox.home.lan/api/scans \
 API-triggered scans are processed and delivered without review. When the document is done (or needs attention),
 the webhook receives a JSON summary with download links.
 
+## Credits
+
+* [node-hp-scan-to](https://github.com/manuc66/node-hp-scan-to) by Emmanuel Counasse (MIT): its protocol
+  notes and client code were the main source for walk-up scanning (button on the scanner, see
+  [docs/WALKUP.md](docs/WALKUP.md)), and the recorded HP device responses in
+  `backend/tests/fixtures/walkup/` are taken from its test assets
+  ([license](backend/tests/fixtures/walkup/LICENSE-node-hp-scan-to)).
+* [DejaVu fonts](https://dejavu-fonts.github.io/) in the scanner simulator
+  ([license](tools/escl-sim/escl_sim/data/fonts/LICENSE_DEJAVU)).
+
 ## License
 
 MIT

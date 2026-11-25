@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?> <!-- HP CONFIDENTIAL --> <scan:ScannerCapabilities
+<?xml version="1.0" encoding="UTF-8"?> <scan:ScannerCapabilities
 xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03"
 xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm"
 xmlns:dest="http://schemas.hp.com/imaging/destination/2011/06/06"
@@ -6,10 +6,10 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 xsi:schemaLocation="http://schemas.hp.com/imaging/escl/2011/05/03 ../../schemas/eSCL.xsd">
 <pwg:Version>2.9</pwg:Version>
 <pwg:MakeAndModel>HP ScanJet Pro N4000 snw1</pwg:MakeAndModel>
-<pwg:SerialNumber>CN23CB402P</pwg:SerialNumber>
-<scan:UUID>D9A31500-01B9-4f6e-9F64-B450E1EAC0E7</scan:UUID>
-<scan:IconURI>http://HPB0795E.local:8080/icon.png</scan:IconURI>
-<scan:AdminURI>http://HPB0795E.local/index.htm</scan:AdminURI>
+<pwg:SerialNumber>CN00000000</pwg:SerialNumber>
+<scan:UUID>00000000-0000-4000-8000-000000000000</scan:UUID>
+<scan:IconURI>http://HP000000.local:8080/icon.png</scan:IconURI>
+<scan:AdminURI>http://HP000000.local/index.htm</scan:AdminURI>
 <scan:Adf> <scan:AdfSimplexInputCaps> <scan:MinWidth>32</scan:MinWidth>
 <scan:MaxWidth>2550</scan:MaxWidth>
 <scan:MinHeight>32</scan:MinHeight>
