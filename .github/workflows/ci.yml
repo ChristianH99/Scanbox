@@ -135,7 +135,8 @@ jobs:
       - run: tools/systest.sh
 
   publish:
-    if: github.event_name != 'pull_request'
+    # Images are built for release tags only (v1.2.3). Pushes to main and pull requests just run the tests.
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [lint, backend-tests, frontend, e2e, systest]
     runs-on: ubuntu-24.04
     permissions:
@@ -150,28 +151,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Version
-        # The release tag is the only source of the version: v1.2.3 -> 1.2.3. Other builds are named
-        # after branch and commit (main-3f8a1c2), so they never pose as a release.
+        # The release tag is the only source of the version: v1.2.3 -> 1.2.3.
         id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::Release tags must look like v1.2.3 (or v1.2.3-rc.1), got $GITHUB_REF_NAME"
-              exit 1
-            fi
-            v="${GITHUB_REF_NAME#v}"
-          else
-            b="${GITHUB_REF_NAME//[^0-9A-Za-z.-]/-}"
-            v="${b}-${GITHUB_SHA::7}"
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tags must look like v1.2.3 (or v1.2.3-rc.1), got $GITHUB_REF_NAME"
+            exit 1
           fi
+          v="${GITHUB_REF_NAME#v}"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Version: $v"
+          # pre-releases (v1.2.3-rc.1) don't move "latest"
+          if [[ "$v" == *-* ]]; then echo "latest=false"; else echo "latest=true"; fi >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
+          flavor: latest=false
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ steps.ver.outputs.latest }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short

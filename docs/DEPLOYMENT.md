@@ -30,11 +30,11 @@ write access to `/data` and to every output folder you mount.
 
 The GitHub Actions workflow publishes `ghcr.io/christianh99/scanbox` with these tags:
 
-* `1.2.3` / `1.2`: releases (created from the git tag `v1.2.3`). Pin one of these for predictable updates.
-* `latest`: the current state of `main`, rebuilt on every push.
-* `sha-<short>`: one specific commit.
+* `latest`: the newest release.
+* `1.2.3` / `1.2`: a specific release (built from the git tag `v1.2.3`), or the newest patch of `1.2`.
+* `sha-<short>`: the release built from one specific commit.
 
-Admin → Diagnostics shows which version is running (`main-<sha>` for a `latest` build).
+Images exist for releases only. Admin → Diagnostics shows which version is running.
 
 * **Public package** (GitHub → Packages → scanbox → Package settings → Change visibility → Public): Container Manager can pull it without credentials.
 * **Private package**: create a GitHub personal access token (classic) with only the **`read:packages`** scope. Then in Container Manager → *Registry* → *Settings* → *Add*:
